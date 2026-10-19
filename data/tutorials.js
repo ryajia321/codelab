@@ -439,4 +439,415 @@ exercises: [
 "试试 <code>--output x.csv</code>（扩展名不对）和 <code>--output /tmp/x.xlsx</code>（目录外），观察两种拒绝提示有什么不同；再试 <code>--check</code>，确认零写入。"
 ]
 }
+,
+{
+"id": "python-fetch-web",
+"title": "用 Python 获取公开网页信息",
+"category": "Python 入门",
+"level": "零基础",
+"minutes": 45,
+"summary": "给任意公开网页做「体检」：标题、简介、正文摘要、链接列表，一键生成 Markdown 报告。只碰公开信息，不碰登录和验证码——先学会边界，再动手。",
+"goals": [
+"用 requests 抓取网页，理解超时和大小限制为什么必要",
+"用 html.parser 提取标题、简介、正文和链接",
+"把抓取结果整理成 Markdown 报告",
+"说出三条红线：只抓公开页面、不伪造身份、不绕过访问限制"
+],
+"env": [
+"电脑上装了 Python 3（第一篇教程的环境就行）",
+"会打开终端（Mac/Linux）或 PowerShell（Windows）",
+"需要联网。本篇只访问公开网页，不需要任何账号"
+],
+"steps": [
+{
+"title": "安装 requests",
+"body": "<p>抓网页用 <code>requests</code> 库（一行命令装好）。它是 Python 世界抓网页的事实标准，比自带的 <code>urllib</code> 好写得多。</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "pip install requests\npython3 -c \"import requests; print('依赖就绪')\""
+},
+"expected": "看到 <code>依赖就绪</code> 就是成功。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "py -m pip install requests\npy -c \"import requests; print('依赖就绪')\""
+},
+"expected2": "同上。"
+},
+{
+"title": "写抓取脚本 fetch_page.py",
+"body": "<p>把下面的代码保存为 <code>fetch_page.py</code>。先看懂它的三道安全线（这也是本篇的核心）：</p><p>① <strong>协议白名单</strong>：只允许 <code>http://</code> 和 <code>https://</code>，<code>file://</code> 这类想读你本地文件的写法直接拒绝。<br>② <strong>超时 + 大小上限</strong>：默认 10 秒超时、2MB 上限，不把目标网站当压力测试，也不让自己的内存爆炸。<br>③ <strong>403 就停手</strong>：网站说「不让你进」（403）是它的自我保护，脚本直接报错退出，绝不伪造身份绕过去。</p>",
+"code": {
+"lang": "python",
+"label": "fetch_page.py",
+"text": "#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n\"\"\"\n网页信息小助手 v1.0\n输入一个公开网页的网址，抓取后输出 Markdown 报告：标题、简介、正文摘要、链接列表。\n\n只做\"公开信息\"的搬运工，不做\"撬锁\"的事：\n  1. 只允许 http:// 和 https://（file://、ftp:// 等一律拒绝）；\n  2. 只抓公开页面——遇到需要登录、验证码、403 拒绝访问时直接停手，\n     绝不伪造身份、换 UA 伪装、绕验证；\n  3. 请求带超时（默认 10 秒）、大小上限（默认 2MB），不把目标网站当压力测试；\n  4. 输出写到 演示目录/输出/，默认不覆盖，原子写入。\n\n依赖：pip install requests\n用法：\n  python3 fetch_page.py 演示目录 https://www.python.org --check\n  python3 fetch_page.py 演示目录 https://www.python.org\n  python3 fetch_page.py 演示目录 https://www.python.org --output 报告.md [--force]\n退出码：0 成功；1 抓取/解析失败；2 用法或安全拒绝。\n\"\"\"\nimport argparse\nimport os\nimport sys\nimport tempfile\nfrom datetime import datetime\nfrom html.parser import HTMLParser\nfrom urllib.parse import urljoin, urlparse\n\nimport requests\n\nMAX_BYTES = 2 * 1024 * 1024      # 单次抓取上限 2MB\nMAX_LINKS = 50                    # 报告中最多收录链接数\nTEXT_PREVIEW = 500                # 正文摘要字数\nTIMEOUT_DEFAULT = 10\nUA = \"CodeLab-Tutorial-Bot/1.0 (learning project; contact: example@example.com)\"\n\n\ndef real_home():\n    return os.path.realpath(os.path.expanduser(\"~\"))\n\n\ndef check_demo(demo):\n    if os.path.islink(demo):\n        return None, \"拒绝：入口不能是符号链接（当前：%s）\" % demo\n    demo = os.path.realpath(demo)\n    if not os.path.isdir(demo):\n        return None, \"目录不存在：%s\" % demo\n    home = real_home()\n    if demo == os.path.sep:\n        return None, \"拒绝：不能使用系统根目录\"\n    if demo == home:\n        return None, \"拒绝：不能直接使用用户主目录，请指定主目录下的演示目录\"\n    if not demo.startswith(home + os.sep):\n        return None, \"拒绝：只能使用用户主目录内的演示目录（当前：%s）\" % demo\n    return demo, None\n\n\ndef check_url(url):\n    \"\"\"只允许 http/https。返回 (None, 错误信息) 或 (规范化url, None)。\"\"\"\n    u = url.strip()\n    p = urlparse(u)\n    if p.scheme not in (\"http\", \"https\"):\n        return None, \"拒绝：只支持 http:// 和 https:// 开头的公开网址（当前：%s）\" % url\n    if not p.netloc:\n        return None, \"拒绝：网址格式不正确（%s）\" % url\n    return u, None\n\n\nclass PageParser(HTMLParser):\n    \"\"\"提取标题、meta description、正文文本、链接。\"\"\"\n\n    def __init__(self):\n        super().__init__(convert_charrefs=True)\n        self.title_parts = []\n        self.description = \"\"\n        self.text_parts = []\n        self.links = []  # [(文本, href原文)]\n        self._in_title = False\n        self._in_a = -1\n        self._in_body_text = True\n        self._skip_depth = 0  # script/style/noscript 内跳过\n\n    def handle_starttag(self, tag, attrs):\n        attrs = dict(attrs)\n        if tag in (\"script\", \"style\", \"noscript\"):\n            self._skip_depth += 1\n            return\n        if tag == \"title\":\n            self._in_title = True\n        if tag == \"meta\" and attrs.get(\"name\", \"\").lower() == \"description\":\n            self.description = attrs.get(\"content\", \"\").strip()\n        if tag == \"a\":\n            href = attrs.get(\"href\", \"\").strip()\n            if href:\n                self.links.append([href, \"\"])  # 文本稍后填\n                self._in_a = len(self.links) - 1\n            else:\n                self._in_a = -1\n\n    def handle_endtag(self, tag):\n        if tag in (\"script\", \"style\", \"noscript\") and self._skip_depth:\n            self._skip_depth -= 1\n        if tag == \"title\":\n            self._in_title = False\n        if tag == \"a\":\n            self._in_a = -1\n\n    def handle_data(self, data):\n        if self._skip_depth:\n            return\n        s = data.strip()\n        if not s:\n            return\n        if self._in_title:\n            self.title_parts.append(s)\n        else:\n            self.text_parts.append(s)\n            if getattr(self, \"_in_a\", -1) >= 0:\n                self.links[self._in_a][1] += s\n\n    @property\n    def title(self):\n        return \"\".join(self.title_parts).strip()\n\n    @property\n    def text(self):\n        # 合并空白，避免超长空白串\n        return \" \".join(\" \".join(self.text_parts).split())\n\n\ndef clean_links(raw_links, base_url):\n    \"\"\"绝对化、去重（保序）、只留 http/https，最多 MAX_LINKS 个。\"\"\"\n    seen, out = set(), []\n    for href, text in raw_links:\n        if not href or href.startswith((\"#\", \"javascript:\", \"mailto:\", \"tel:\")):\n            continue\n        abs_url = urljoin(base_url, href)\n        p = urlparse(abs_url)\n        if p.scheme not in (\"http\", \"https\"):\n            continue\n        if abs_url in seen:\n            continue\n        seen.add(abs_url)\n        out.append((text.strip() or abs_url, abs_url))\n        if len(out) >= MAX_LINKS:\n            break\n    return out\n\n\ndef fetch(url, timeout):\n    \"\"\"抓取页面。返回 (html_text, info) 或抛出带中文信息的异常。\"\"\"\n    try:\n        r = requests.get(url, headers={\"User-Agent\": UA}, timeout=timeout, stream=True)\n    except requests.exceptions.Timeout:\n        raise RuntimeError(\"请求超时（%d 秒无响应），目标网站可能很慢或不可达\" % timeout)\n    except requests.exceptions.ConnectionError as e:\n        raise RuntimeError(\"连接失败：%s（检查网址是否正确、网络是否通畅）\" % e)\n    except requests.exceptions.RequestException as e:\n        raise RuntimeError(\"请求失败：%s\" % e)\n    try:\n        if r.status_code == 403:\n            raise RuntimeError(\"目标网站拒绝访问（403）。这是网站的自我保护，\"\n                               \"不要尝试伪装身份或绕过，换公开页面再试。\")\n        if r.status_code == 404:\n            raise RuntimeError(\"页面不存在（404），检查网址是否正确。\")\n        if r.status_code >= 400:\n            raise RuntimeError(\"目标网站返回错误状态码 %d\" % r.status_code)\n        ctype = r.headers.get(\"Content-Type\", \"\")\n        if \"text/html\" not in ctype and \"text/\" not in ctype and \"xml\" not in ctype:\n            raise RuntimeError(\"不是网页文本（Content-Type: %s），本工具只处理网页\" % (ctype or \"未知\"))\n        length = r.headers.get(\"Content-Length\")\n        if length and length.isdigit() and int(length) > MAX_BYTES:\n            raise RuntimeError(\"页面太大（声明 %s 字节，超过 %dMB 上限），拒绝下载\" % (length, MAX_BYTES // 1024 // 1024))\n        buf = []\n        total = 0\n        for chunk in r.iter_content(chunk_size=65536, decode_unicode=True):\n            if chunk:\n                total += len(chunk.encode(\"utf-8\", \"ignore\"))\n                if total > MAX_BYTES:\n                    raise RuntimeError(\"页面太大（超过 %dMB 上限），已停止下载\" % (MAX_BYTES // 1024 // 1024))\n                buf.append(chunk)\n        html = \"\".join(buf)\n        # 修正编码：requests 按 header 猜，错了就用 apparent_encoding 再试\n        if r.encoding and \"�\" in html[:2000]:\n            html = r.content.decode(r.apparent_encoding or \"utf-8\", errors=\"replace\")\n        return html, {\"status\": r.status_code, \"url\": r.url}\n    finally:\n        r.close()\n\n\ndef build_report(url, info, title, description, text, links):\n    L = []\n    L.append(\"# 网页信息报告\")\n    L.append(\"\")\n    L.append(\"- 网址：%s\" % url)\n    L.append(\"- 实际地址：%s\" % info[\"url\"])\n    L.append(\"- 获取时间：%s\" % datetime.now().strftime(\"%Y-%m-%d %H:%M\"))\n    L.append(\"- 状态码：%s\" % info[\"status\"])\n    L.append(\"- 标题：%s\" % (title or \"（无标题）\"))\n    L.append(\"- 简介：%s\" % (description or \"（无简介）\"))\n    L.append(\"\")\n    L.append(\"## 正文摘要（前 %d 字）\" % TEXT_PREVIEW)\n    L.append(\"\")\n    L.append(text[:TEXT_PREVIEW] or \"（无正文）\")\n    L.append(\"\")\n    L.append(\"## 链接（共 %d 个）\" % len(links))\n    L.append(\"\")\n    for text_, href in links:\n        short = text_ if len(text_) <= 40 else text_[:40] + \"…\"\n        L.append(\"- [%s](%s)\" % (short.replace(\"[\", \"［\").replace(\"]\", \"］\"), href))\n    L.append(\"\")\n    return \"\\n\".join(L)\n\n\ndef main():\n    ap = argparse.ArgumentParser(description=\"抓取公开网页信息并生成 Markdown 报告\")\n    ap.add_argument(\"demo_dir\", help=\"演示目录路径\")\n    ap.add_argument(\"url\", help=\"要抓取的公开网页网址（http/https）\")\n    ap.add_argument(\"--output\", default=\"网页信息.md\", help=\"输出文件名（位于演示目录/输出/ 下）\")\n    ap.add_argument(\"--check\", action=\"store_true\", help=\"只在终端显示摘要，不创建任何文件\")\n    ap.add_argument(\"--timeout\", type=int, default=TIMEOUT_DEFAULT, help=\"请求超时秒数（默认 10）\")\n    ap.add_argument(\"--force\", action=\"store_true\", help=\"允许覆盖已存在的输出文件\")\n    a = ap.parse_args()\n\n    demo, err = check_demo(a.demo_dir)\n    if err:\n        print(err)\n        return 2\n    url, err = check_url(a.url)\n    if err:\n        print(err)\n        return 2\n    if a.timeout <= 0 or a.timeout > 120:\n        print(\"拒绝：超时秒数应在 1–120 之间。\")\n        return 2\n\n    try:\n        html, info = fetch(url, a.timeout)\n    except RuntimeError as e:\n        print(\"抓取失败：%s\" % e)\n        return 1\n    except Exception as e:\n        print(\"抓取失败（未预期错误）：%s\" % e)\n        return 1\n\n    parser = PageParser()\n    try:\n        parser.feed(html)\n    except Exception as e:\n        print(\"解析失败：%s\" % e)\n        return 1\n    links = clean_links(parser.links, info[\"url\"])\n    report = build_report(url, info, parser.title, parser.description, parser.text, links)\n\n    if a.check:\n        # 严格零写入：打印摘要\n        print(\"标题：%s\" % (parser.title or \"（无）\"))\n        print(\"简介：%s\" % (parser.description[:80] or \"（无）\"))\n        print(\"正文前100字：%s\" % parser.text[:100])\n        print(\"链接数：%d\" % len(links))\n        for text_, href in links[:5]:\n            print(\"  - %s\" % href)\n        return 0\n\n    out_dir = os.path.realpath(os.path.join(demo, \"输出\"))\n    os.makedirs(out_dir, exist_ok=True)\n    final = os.path.realpath(os.path.join(out_dir, os.path.basename(a.output)))\n    if final != out_dir and not final.startswith(out_dir + os.sep):\n        print(\"拒绝：输出文件名不能包含路径（%s）\" % a.output)\n        return 2\n    if os.path.islink(final):\n        print(\"拒绝：输出目标本身是符号链接：%s\" % a.output)\n        return 2\n    if os.path.lexists(final) and not a.force:\n        print(\"输出文件已存在，拒绝覆盖：%s\\n请用 --output 换名，或确认要覆盖时加 --force。\" % final)\n        return 1\n\n    fd, tmp = tempfile.mkstemp(dir=out_dir, prefix=\".fetch-\", suffix=\".md\")\n    try:\n        with os.fdopen(fd, \"w\", encoding=\"utf-8\") as f:\n            f.write(report)\n        if a.force and os.path.lexists(final):\n            os.replace(tmp, final)\n        else:\n            try:\n                os.link(tmp, final)\n            except FileExistsError:\n                print(\"输出文件已存在，拒绝覆盖：%s\" % final)\n                return 1\n        print(\"报告已生成：%s\" % final)\n        print(\"标题：%s\" % (parser.title or \"（无）\"))\n        print(\"链接数：%d\" % len(links))\n        return 0\n    finally:\n        try:\n            os.unlink(tmp)\n        except OSError:\n            pass\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+},
+"expected": "文件保存成功，待会儿直接运行。"
+},
+{
+"title": "先预览：--check 看摘要",
+"body": "<p>动手前先预览。<code>--check</code> 只在终端显示摘要，不创建任何文件。演示用 <code>https://www.python.org</code>（Python 官网，公开且稳定）：</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "mkdir -p ~/web-fetch-demo\npython3 fetch_page.py ~/web-fetch-demo https://www.python.org --check"
+},
+"expected": "终端显示标题、简介、正文前 100 字和链接数。<code>~/web-fetch-demo/输出/</code> 目录不存在（零写入）。"
+},
+{
+"title": "执行抓取，看 Markdown 报告",
+"body": "<p>不加 <code>--check</code> 就是正式执行，报告写到 <code>输出/网页信息.md</code>。打开看看：标题、简介、正文摘要、链接列表是不是都对。</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 fetch_page.py ~/web-fetch-demo https://www.python.org"
+},
+"expected": "<code>输出/网页信息.md</code> 生成，用文本编辑器打开能看到完整报告。再跑一次会被「拒绝覆盖」保护拦住。"
+},
+{
+"title": "试试边界：404 和 403",
+"body": "<p>故意抓一个不存在的页面，看脚本怎么报错。然后理解：<strong>报错是功能，不是 bug</strong>——它在替你守边界。</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 fetch_page.py ~/web-fetch-demo https://www.python.org/this-page-does-not-exist-12345 --check"
+},
+"expected": "看到「页面不存在（404）」的中文提示，退出码为 1。记住这个手感：以后看到 403，第一反应是停手，不是想办法绕。"
+},
+{
+"title": "换个网址，抓你感兴趣的页面",
+"body": "<p>把网址换成你常看的公开页面（比如某个技术博客的文章页），再跑一遍。注意：需要登录才能看的页面不要试——那是红线。</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 fetch_page.py ~/web-fetch-demo https://example.com --output 我的第一份报告.md --check"
+},
+"expected": "能说出报告里每个部分对应网页的哪个位置。<code>--output</code> 可以给报告换名。"
+},
+{
+"title": "验收：说出三条红线",
+"body": "<p>最后确认你理解了边界。能用自己的话说出下面三个问题的答案，这篇就算真正掌握了：</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 fetch_page.py ~/web-fetch-demo file:///etc/passwd --check; echo \"退出码: $?\""
+},
+"expected": "能说出：① 为什么 <code>file://</code> 被拒绝；② 遇到 403 应该怎么做；③ 超时和大小限制在保护谁。"
+}
+],
+"errors": [
+{
+"t": "ModuleNotFoundError: No module named 'requests'",
+"s": "依赖没装上，或装到了另一个 Python 里。",
+"f": "运行 <code>pip install requests</code>（Windows 用 <code>py -m pip install requests</code>）再试。"
+},
+{
+"t": "拒绝：只支持 http:// 和 https:// 开头的公开网址",
+"s": "网址写错了，或者用了 file:// 这类不允许的协议。",
+"f": "检查网址是不是以 http:// 或 https:// 开头。"
+},
+{
+"t": "抓取失败：目标网站拒绝访问（403）",
+"s": "网站的自我保护，不让你这个程序访问。",
+"f": "这是红线：不要伪装身份、不要换 UA 绕过。换公开页面再试。"
+},
+{
+"t": "抓取失败：页面不存在（404）",
+"s": "网址写错了，或者页面被删了。",
+"f": "把网址粘到浏览器里打开确认一下，再复制正确的来。"
+},
+{
+"t": "抓取失败：请求超时",
+"s": "网站响应太慢，或你的网络不通。",
+"f": "先确认能打开别的网站；可以加 <code>--timeout 20</code> 放宽一点再试。"
+},
+{
+"t": "输出文件已存在，拒绝覆盖",
+"s": "保护机制，防止新报告盖掉旧报告。",
+"f": "加 <code>--force</code> 覆盖，或用 <code>--output 新名字.md</code> 换名。"
+}
+],
+"checklist": [
+"【依赖】操作：<code>python3 -c \"import requests\"</code>。预期：不报错。",
+"【预览】操作：<code>python3 fetch_page.py ~/web-fetch-demo https://www.python.org --check</code>。预期：终端有标题/简介/链接数摘要，<code>输出/</code> 目录不存在。",
+"【执行】操作：不加 <code>--check</code> 跑一遍。预期：<code>输出/网页信息.md</code> 生成，内容完整。",
+"【边界404】操作：抓一个不存在的网址。预期：中文提示 404，退出码 1。",
+"【边界协议】操作：<code>file:///etc/passwd --check</code>。预期：被拒绝，退出码 2。",
+"【换网址】操作：换一个你感兴趣的公开页面抓取。预期：能说出报告各部分的来源。",
+"【说出红线】能用自己的话说出：只抓公开页面、403 停手、超时和大小限制保护谁。"
+],
+"exercises": [
+"给脚本加一个 <code>--timeout</code> 的使用练习：用 <code>--timeout 1</code> 抓一个稍慢的网站，观察超时提示。",
+"打开生成的 Markdown 报告，对照浏览器里的原网页，数一数链接数对不对，看看哪些链接被过滤掉了（想想为什么）。",
+"试试抓一个返回 JSON 的公开 API 地址（如 <code>https://api.github.com</code>），观察脚本说什么（提示：它不是网页文本）。"
+]
+},
+{
+"id": "web-github-query",
+"title": "用公开 API 做一个 GitHub 仓库查询页",
+"category": "网页入门",
+"level": "零基础",
+"minutes": 40,
+"summary": "不写后端，只用浏览器里的 fetch 调用 GitHub 公开 API，做一个能查任意仓库 star 数的查询页。理解 API、JSON、异步请求一次搞定。",
+"goals": [
+"理解 API 是什么：别人写好的、通过网址调用的功能",
+"读懂 JSON 数据：在浏览器控制台找到 stargazers_count 这些字段",
+"用 fetch 发异步请求，理解 then/catch 干什么",
+"给页面加上错误处理：404、频率限制、断网都有中文提示"
+],
+"env": [
+"一个现代浏览器（Chrome / Edge / Safari 都行）",
+"一个文本编辑器（记事本、VS Code 都行）",
+"需要联网。不用装 Python，不用注册任何账号"
+],
+"steps": [
+{
+"title": "新建 query.html",
+"body": "<p>把下面的代码保存为 <code>query.html</code>（一个文件就是全部）。先别管看懂每一行，跑起来再说：</p><p>注意这个页面的核心只有一件事——调用 <code>https://api.github.com/repos/xxx/yyy</code> 这个<strong>公开 API</strong>，GitHub 把仓库数据以 <strong>JSON</strong> 格式返回，页面再把它显示出来。不需要密钥，不需要注册。</p>",
+"code": {
+"lang": "html",
+"label": "query.html",
+"text": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>GitHub 仓库查询</title>\n<style>\n  * { box-sizing: border-box; }\n  body { font-family: system-ui, -apple-system, \"PingFang SC\", \"Microsoft YaHei\", sans-serif;\n         background: #0d1117; color: #e6edf3; margin: 0; padding: 24px 16px; }\n  .wrap { max-width: 560px; margin: 0 auto; }\n  h1 { font-size: 22px; margin: 0 0 6px; }\n  p.sub { color: #8b949e; font-size: 14px; margin: 0 0 18px; }\n  .row { display: flex; gap: 8px; }\n  input { flex: 1; padding: 10px 12px; font-size: 15px; border-radius: 8px;\n          border: 1px solid #30363d; background: #161b22; color: #e6edf3; }\n  button { padding: 10px 18px; font-size: 15px; border-radius: 8px; border: 0;\n           background: #238636; color: #fff; cursor: pointer; }\n  button:disabled { background: #30363d; cursor: wait; }\n  #msg { margin-top: 14px; font-size: 14px; min-height: 20px; }\n  #msg.err { color: #f85149; }\n  #msg.loading { color: #8b949e; }\n  .card { margin-top: 12px; border: 1px solid #30363d; border-radius: 12px;\n          padding: 18px; background: #161b22; display: none; }\n  .card.show { display: block; }\n  .card .top { display: flex; gap: 12px; align-items: center; }\n  .card img { width: 56px; height: 56px; border-radius: 50%; }\n  .card h2 { font-size: 18px; margin: 0; }\n  .card h2 a { color: #58a6ff; text-decoration: none; }\n  .card .desc { color: #8b949e; font-size: 14px; margin: 10px 0; }\n  .stats { display: flex; gap: 16px; font-size: 14px; flex-wrap: wrap; }\n  .stats b { color: #f0b429; }\n  .foot { margin-top: 18px; font-size: 12px; color: #6e7681; }\n</style>\n</head>\n<body>\n<div class=\"wrap\">\n  <h1>🔍 GitHub 仓库查询</h1>\n  <p class=\"sub\">调用 GitHub 公开 API，无需注册、无需密钥，直接查任意公开仓库。</p>\n  <div class=\"row\">\n    <input id=\"repo\" placeholder=\"输入 owner/仓库名，如 ryajia321/codelab\" value=\"ryajia321/codelab\">\n    <button id=\"btn\">查询</button>\n  </div>\n  <div id=\"msg\"></div>\n  <div class=\"card\" id=\"card\">\n    <div class=\"top\">\n      <img id=\"avatar\" alt=\"头像\">\n      <div>\n        <h2><a id=\"name\" href=\"#\" target=\"_blank\" rel=\"noopener\"></a></h2>\n        <div class=\"desc\" id=\"owner\"></div>\n      </div>\n    </div>\n    <div class=\"desc\" id=\"desc\"></div>\n    <div class=\"stats\">\n      <span>⭐ <b id=\"stars\"></b></span>\n      <span>⑂ <b id=\"forks\"></b></span>\n      <span>💻 <b id=\"lang\"></b></span>\n      <span>🕐 <b id=\"updated\"></b></span>\n    </div>\n  </div>\n  <p class=\"foot\">数据来自 api.github.com 实时查询。未登录每小时限 60 次，省着点点。</p>\n</div>\n<script>\nvar $ = function(id){ return document.getElementById(id); };\n\nfunction setMsg(text, cls){\n  var m = $(\"msg\");\n  m.textContent = text;\n  m.className = cls || \"\";\n}\n\nfunction validRepo(s){\n  // 只允许 owner/repo 形状：每段以字母数字开头，后接字母数字 . _ -，中间一道斜杠\n  return /^[A-Za-z0-9][A-Za-z0-9_.\\-]*\\/[A-Za-z0-9][A-Za-z0-9_.\\-]*$/.test(s.trim());\n}\n\nfunction fmtDate(iso){\n  try { return new Date(iso).toLocaleDateString(\"zh-CN\"); }\n  catch(e){ return iso; }\n}\n\nfunction query(){\n  var repo = $(\"repo\").value.trim();\n  if(!validRepo(repo)){\n    setMsg(\"格式不对：请输入 owner/仓库名，例如 ryajia321/codelab\", \"err\");\n    return;\n  }\n  var btn = $(\"btn\");\n  btn.disabled = true;\n  $(\"card\").classList.remove(\"show\");\n  setMsg(\"查询中…\", \"loading\");\n\n  fetch(\"https://api.github.com/repos/\" + repo)\n    .then(function(res){\n      if(res.status === 404){\n        throw new Error(\"仓库不存在（404）：检查 owner/仓库名是否写对，注意大小写。\");\n      }\n      if(res.status === 403){\n        throw new Error(\"触发频率限制（403）：GitHub 未登录每小时只让查 60 次，歇会儿再试。\");\n      }\n      if(!res.ok){\n        throw new Error(\"GitHub 返回异常状态码：\" + res.status);\n      }\n      return res.json();\n    })\n    .then(function(d){\n      $(\"avatar\").src = d.owner.avatar_url;\n      var nm = $(\"name\");\n      nm.textContent = d.full_name;\n      nm.href = d.html_url;\n      $(\"owner\").textContent = \"作者：\" + d.owner.login;\n      $(\"desc\").textContent = d.description || \"（这个仓库没有写简介）\";\n      $(\"stars\").textContent = d.stargazers_count;\n      $(\"forks\").textContent = d.forks_count;\n      $(\"lang\").textContent = d.language || \"未知\";\n      $(\"updated\").textContent = fmtDate(d.updated_at);\n      $(\"card\").classList.add(\"show\");\n      setMsg(\"\");\n    })\n    .catch(function(err){\n      // 网络断开、域名被拦等都会走到这里\n      setMsg(\"查不到：\" + err.message, \"err\");\n    })\n    .finally(function(){\n      btn.disabled = false;\n    });\n}\n\n$(\"btn\").addEventListener(\"click\", query);\n$(\"repo\").addEventListener(\"keydown\", function(e){\n  if(e.key === \"Enter\") query();\n});\n</script>\n</body>\n</html>\n"
+},
+"expected": "文件保存成功，双击用浏览器打开能看到查询界面。"
+},
+{
+"title": "查第一个仓库",
+"body": "<p>输入框里默认填着 <code>ryajia321/codelab</code>（就是咱们这个教程站的仓库），点「查询」。如果一切正常，你会看到它的 star 数、fork 数、简介。</p><div class=\"tip\"><b>冷知识：</b>你刚才看到的数字是<strong>实时</strong>的——有人给仓库点了 star，刷新页面就会变。这就是 API 的意义：数据活在别人的服务器上，你随时去问。</div>",
+"code": {
+"lang": "bash",
+"label": "操作",
+"text": "# 不用终端。在浏览器里点「查询」按钮"
+},
+"expected": "页面显示仓库卡片：头像、简介、⭐数、⑂数、语言、更新日期。"
+},
+{
+"title": "看懂 fetch 那一段",
+"body": "<p>找到代码里的 <code>fetch(\"https://api.github.com/repos/\" + repo)</code> 这一行。理解三件事：① 网址是拼出来的——<code>repo</code> 变量就是你输入的 <code>owner/仓库名</code>；② <code>fetch</code> 是浏览器自带的「去要数据」的功能；③ <code>.then()</code> 的意思是「数据回来之后，再执行我」——因为网络要花时间，代码不等它，叫<strong>异步</strong>。</p>",
+"code": {
+"lang": "bash",
+"label": "操作",
+"text": "# 按 F12 打开开发者工具 → Console（控制台）\n# 输入下面的命令回车，看看返回什么：\nfetch(\"https://api.github.com/repos/ryajia321/codelab\").then(r => r.json()).then(d => console.log(d.stargazers_count))"
+},
+"expected": "控制台打印出一个数字（star 数）。你亲手调了一次 API。"
+},
+{
+"title": "看懂 JSON 取字段",
+"body": "<p>API 返回的是一大坨 JSON（就是花括号套花括号的文本）。页面只取了其中几个字段：<code>d.full_name</code>（仓库全名）、<code>d.stargazers_count</code>（star 数）、<code>d.owner.avatar_url</code>（头像地址）。试着在控制台打印 <code>d</code> 整个对象，找找还有哪些字段。</p>",
+"code": {
+"lang": "bash",
+"label": "操作",
+"text": "# 在控制台输入：\nfetch(\"https://api.github.com/repos/ryajia321/codelab\").then(r => r.json()).then(d => console.log(Object.keys(d)))"
+},
+"expected": "能说出至少 3 个 JSON 字段名和它们的意思。"
+},
+{
+"title": "试错：看错误处理",
+"body": "<p>故意输错一个仓库名（如 <code>ryajia321/xxxxx</code>），点查询。页面应该显示中文错误提示，而不是白屏或转圈圈——这就是第 1 步代码里 <code>.catch()</code> 和 404 分支的作用。</p>",
+"code": {
+"lang": "bash",
+"label": "操作",
+"text": "# 在输入框输入 ryajia321/xxxxx 点查询\n# 再快速连点 70 次查询按钮（开玩笑的，别真点）"
+},
+"expected": "看到「仓库不存在（404）」的中文提示。理解：好的程序要把每种失败都翻译成人话。"
+},
+{
+"title": "改一改：换默认仓库",
+"body": "<p>把输入框默认值换成你喜欢的开源项目（如 <code>vuejs/core</code>），保存后刷新页面。观察 star 数是不是变了——你已经会「定制」这个小工具了。</p>",
+"code": {
+"lang": "bash",
+"label": "操作",
+"text": "# 用编辑器打开 query.html\n# 找到 value=\"ryajia321/codelab\" 改成你喜欢的仓库\n# 保存，浏览器刷新"
+},
+"expected": "页面默认查你改的仓库，数据显示正确。"
+},
+{
+"title": "验收：说出三个词",
+"body": "<p>能用自己的话说出 <strong>API</strong>、<strong>JSON</strong>、<strong>fetch</strong> 各是什么，这篇就算真正掌握了。提示：API 是「别人开好的数据窗口」，JSON 是「窗口递出来的纸条格式」，fetch 是「你伸手去拿的动作」。</p>",
+"code": {
+"lang": "bash",
+"label": "操作",
+"text": "# 不用操作，用嘴说"
+},
+"expected": "三个词都能用自己的话讲清楚，不说术语套话。"
+}
+],
+"errors": [
+{
+"t": "查不到：仓库不存在（404）",
+"s": "owner 或仓库名写错了（注意大小写）。",
+"f": "去 github.com 搜一下正确的仓库名，复制过来。"
+},
+{
+"t": "查不到：触发频率限制（403）",
+"s": "GitHub 未登录用户每小时只让查 60 次，点太快了。",
+"f": "歇一会儿再试。这是公开 API 的规矩，不是 bug。"
+},
+{
+"t": "查不到：Failed to fetch / 网络错误",
+"s": "网络不通，或 api.github.com 被网络环境拦了。",
+"f": "先确认能打开 github.com；公司/校园网可能有限制，换网络再试。"
+},
+{
+"t": "页面一片空白",
+"s": "query.html 没保存对，或双击打开的是别的目录的文件。",
+"f": "确认文件后缀是 .html 不是 .txt；右键 → 打开方式 → 浏览器。"
+}
+],
+"checklist": [
+"【建文件】操作：保存 <code>query.html</code> 并用浏览器打开。预期：看到查询界面。",
+"【查仓库】操作：输入 <code>ryajia321/codelab</code> 点查询。预期：显示 star/fork/简介卡片。",
+"【调API】操作：在控制台用 fetch 查一次。预期：能打印出 star 数。",
+"【读JSON】操作：打印全部字段名。预期：说出 3 个字段的意思。",
+"【试错】操作：输入不存在的仓库名。预期：中文 404 提示，不白屏。",
+"【定制】操作：把默认仓库换成你喜欢的项目。预期：刷新后查新仓库。",
+"【说出概念】能用自己的话讲清 API、JSON、fetch。"
+],
+"exercises": [
+"给页面加一个「显示仓库创建时间」的功能：查文档找到 JSON 里的 <code>created_at</code> 字段，仿照更新日期那一行加进去。",
+"把 star 数超过 10000 的仓库卡片边框变成金色（提示：改 <code>.card</code> 的样式，加个 if 判断）。",
+"找一个你常用的 App，想想它背后可能调用了哪些 API（比如天气 App 查天气的 API）。"
+]
+},
+{
+"id": "web-publish-site",
+"title": "发布你的第一个网站",
+"category": "网页入门",
+"level": "零基础",
+"minutes": 60,
+"summary": "从零发布一个全世界都能访问的个人主页：写两个文件，本地检查一遍，推送到 GitHub，开通 Pages。今晚，你的网站就上线。",
+"goals": [
+"写出最小可用的网站：一个 index.html + 一个 style.css",
+"用检查脚本在发布前抓住低级错误",
+"在 GitHub 上建仓库并上传文件",
+"开通 GitHub Pages，拿到属于自己的网址",
+"学会更新网站：改文件 → 重新上传 → 等几分钟"
+],
+"env": [
+"一个现代浏览器",
+"一个 GitHub 账号（没有就去 github.com 免费注册一个，2 分钟）",
+"一个文本编辑器。不用装 Python（检查脚本可选）"
+],
+"steps": [
+{
+"title": "写 index.html",
+"body": "<p>新建一个文件夹 <code>mysite</code>，在里面新建 <code>index.html</code>，粘贴下面的代码。这是网站的<strong>入口文件</strong>——访问网址时，服务器默认就找它，缺了它会 404。</p><p>把 <code>阿哲</code> 换成你自己的名字，邮箱换成你自己的（不想公开就删掉那一行）。</p>",
+"code": {
+"lang": "html",
+"label": "index.html",
+"text": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>我的第一个网站</title>\n<link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n<header>\n  <h1>你好，我是阿哲 👋</h1>\n  <p class=\"sub\">这是我亲手发布的第一个网站</p>\n</header>\n<main>\n  <section>\n    <h2>关于我</h2>\n    <p>我正在跟着 CodeLab 学编程，这是我的第一份作业：一个能被全世界访问的网页。</p>\n  </section>\n  <section>\n    <h2>我学会的三件事</h2>\n    <ul>\n      <li>HTML 是网页的骨架</li>\n      <li>CSS 是网页的衣服</li>\n      <li>GitHub Pages 能免费发布静态网站</li>\n    </ul>\n  </section>\n  <section>\n    <h2>联系我</h2>\n    <p>给我发邮件：<a href=\"mailto:hello@example.com\">hello@example.com</a></p>\n  </section>\n</main>\n<footer>\n  <p>© 2026 阿哲 · 用 CodeLab 教程发布</p>\n</footer>\n</body>\n</html>\n"
+},
+"expected": "文件保存为 <code>mysite/index.html</code>，双击用浏览器打开能看到页面。"
+},
+{
+"title": "写 style.css",
+"body": "<p>在同一个文件夹里新建 <code>style.css</code>，粘贴下面的代码。这是网页的「衣服」——删掉它页面也能看，但会丑很多。注意 <code>index.html</code> 里有一行 <code>&lt;link rel=\"stylesheet\" href=\"style.css\"&gt;</code>，就是靠它把衣服穿上的，文件名必须对上。</p>",
+"code": {
+"lang": "css",
+"label": "style.css",
+"text": "* { box-sizing: border-box; }\nbody {\n  font-family: system-ui, -apple-system, \"PingFang SC\", \"Microsoft YaHei\", sans-serif;\n  margin: 0; padding: 0; color: #24292f; background: #f6f8fa; line-height: 1.7;\n}\nheader { background: linear-gradient(135deg, #6e40c9, #1f6feb); color: #fff;\n         text-align: center; padding: 56px 20px; }\nheader h1 { margin: 0 0 8px; font-size: 30px; }\nheader .sub { margin: 0; opacity: 0.85; }\nmain { max-width: 640px; margin: 0 auto; padding: 24px 20px; }\nsection { background: #fff; border: 1px solid #d0d7de; border-radius: 12px;\n          padding: 20px 22px; margin-bottom: 18px; }\nsection h2 { margin: 0 0 10px; font-size: 19px; }\nfooter { text-align: center; color: #57606a; font-size: 13px; padding: 24px; }\na { color: #1f6feb; }\n"
+},
+"expected": "刷新浏览器，页面有了颜色和排版，和之前判若两「人」。"
+},
+{
+"title": "发布前检查",
+"body": "<p>把下面的检查脚本保存为 <code>check_site.py</code>（放在 <code>mysite</code> 的<strong>外面</strong>，别传上去），运行它。它会检查：有没有 <code>index.html</code>、有没有标题、引用的文件存不存在、有没有写死本机路径。抓住低级错误，别等传上去才发现首页 404。</p>",
+"code": {
+"lang": "python",
+"label": "check_site.py",
+"text": "#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n\"\"\"\n网站发布前检查 v1.0\n在推送到 GitHub 之前，先在本地检查网站文件齐不齐、写得对不对，\n避免\"传上去才发现首页 404\"的尴尬。\n\n检查项：\n  1. index.html 必须存在（网站入口）；\n  2. 必须有 <title>（浏览器标签页显示它）；\n  3. 必须有 <h1>（页面主标题）；\n  4. 引用的 style.css / script.js 等本地文件必须真实存在；\n  5. 不得出现本机绝对路径（C:\\\\...、file://），否则传上去别人打不开；\n  6. 建议：有 <meta name=\"viewport\">（手机能正常看）。\n\n用法：python3 check_site.py 网站目录\n退出码：0 全部通过；1 有错误；2 用法错误。\n\"\"\"\nimport os\nimport re\nimport sys\n\nHREF_SRC_RE = re.compile(r'''(?:href|src)\\s*=\\s*[\"']([^\"'#]+)[\"']''', re.IGNORECASE)\nTITLE_RE = re.compile(r\"<title[^>]*>(.*?)</title>\", re.IGNORECASE | re.DOTALL)\nH1_RE = re.compile(r\"<h1[^>]*>\", re.IGNORECASE)\nVIEWPORT_RE = re.compile(r'<meta[^>]*name\\s*=\\s*[\"\\']viewport[\"\\']', re.IGNORECASE)\nLOCAL_ABS_RE = re.compile(r\"(file://|[A-Za-z]:[\\\\/]|\\\\\\\\)\")\n\n\ndef main():\n    if len(sys.argv) != 2:\n        print(\"用法：python3 check_site.py 网站目录\")\n        return 2\n    site = os.path.realpath(sys.argv[1])\n    if not os.path.isdir(site):\n        print(\"目录不存在：%s\" % sys.argv[1])\n        return 2\n\n    errors, warns = [], []\n    index = os.path.join(site, \"index.html\")\n    if not os.path.isfile(index):\n        errors.append(\"缺少 index.html——这是网站的入口文件，没有它访问会 404。\")\n        print(\"❌ \" + errors[0])\n        print(\"\\n检查结果：%d 个错误，%d 个警告\" % (len(errors), len(warns)))\n        return 1\n\n    html = open(index, encoding=\"utf-8\", errors=\"replace\").read()\n\n    m = TITLE_RE.search(html)\n    if not m or not m.group(1).strip():\n        errors.append(\"index.html 没有 <title>，浏览器标签页会显示空白。\")\n    if not H1_RE.search(html):\n        errors.append(\"index.html 没有 <h1> 主标题，页面会显得没有重点。\")\n\n    # 引用的本地文件必须存在\n    for ref in sorted(set(HREF_SRC_RE.findall(html))):\n        if ref.startswith((\"http://\", \"https://\", \"//\", \"data:\", \"mailto:\", \"tel:\")):\n            continue\n        target = os.path.realpath(os.path.join(site, ref.split(\"?\")[0]))\n        if target != site and not target.startswith(site + os.sep):\n            errors.append(\"引用了站外文件：%s（发布后可能失效）\" % ref)\n        elif not os.path.isfile(target):\n            errors.append(\"引用了不存在的文件：%s\" % ref)\n\n    # 本机绝对路径\n    bad = sorted(set(LOCAL_ABS_RE.findall(html)))\n    if bad or \"file://\" in html.lower():\n        errors.append(\"出现了本机绝对路径（如 C:\\\\ 或 file://），传到网上后别人打不开。\")\n\n    if not VIEWPORT_RE.search(html):\n        warns.append(\"建议加 <meta name=\\\"viewport\\\">，否则手机上看会挤成一团。\")\n\n    for e in errors:\n        print(\"❌ \" + e)\n    for w in warns:\n        print(\"⚠️ \" + w)\n    print(\"\\n检查结果：%d 个错误，%d 个警告\" % (len(errors), len(warns)))\n    if not errors and not warns:\n        print(\"✅ 全部通过，可以发布了！\")\n    elif not errors:\n        print(\"✅ 没有错误，可以发布（警告不强制）。\")\n    return 1 if errors else 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+},
+"expected": "终端显示「✅ 全部通过，可以发布了！」。（Windows 用 <code>py check_site.py mysite</code>）",
+"code2": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 check_site.py mysite"
+},
+"expected2": "同上。"
+},
+{
+"title": "建 GitHub 仓库",
+"body": "<p>登录 <code>github.com</code>，点右上角 <code>+</code> → <code>New repository</code>。仓库名填 <code>mysite</code>（小写英文），选 <code>Public</code>（公开，Pages 免费版要求公开），勾选 <code>Add a README file</code>，点 <code>Create repository</code>。</p><div class=\"tip\"><b>注意：</b>仓库名里不要用中文和空格，否则网址会很难看。</div>",
+"code": {
+"lang": "bash",
+"label": "操作",
+"text": "# 纯网页操作，不用终端\n# github.com → + → New repository → 填 mysite → Public → Create"
+},
+"expected": "仓库建好，地址类似 <code>github.com/你的用户名/mysite</code>。"
+},
+{
+"title": "上传网站文件",
+"body": "<p>在仓库页面点 <code>Add file</code> → <code>Upload files</code>，把 <code>mysite</code> 里的 <code>index.html</code> 和 <code>style.css</code> 拖进去（<strong>不要</strong>传 <code>check_site.py</code>），点 <code>Commit changes</code>。</p>",
+"code": {
+"lang": "bash",
+"label": "操作",
+"text": "# 仓库页 → Add file → Upload files → 拖入两个文件 → Commit changes"
+},
+"expected": "仓库文件列表里出现 <code>index.html</code> 和 <code>style.css</code>。"
+},
+{
+"title": "开通 Pages，拿到网址",
+"body": "<p>在仓库页面点 <code>Settings</code> → 左侧 <code>Pages</code> → <code>Build and deployment</code> 下的 <code>Source</code> 选 <code>Deploy from a branch</code>，<code>Branch</code> 选 <code>main</code> / <code>(root)</code>，点 <code>Save</code>。等 1–3 分钟，刷新这个页面，顶部会出现你的网址：<code>https://你的用户名.github.io/mysite/</code>。</p><div class=\"tip\"><b>等不及？</b>第一次构建通常要 1–3 分钟，看到 404 先别慌，喝口水再刷新。</div>",
+"code": {
+"lang": "bash",
+"label": "操作",
+"text": "# Settings → Pages → Deploy from a branch → main/(root) → Save\n# 等 1–3 分钟后访问 https://你的用户名.github.io/mysite/"
+},
+"expected": "浏览器打开网址，看到你的个人主页。全世界都能访问了！"
+},
+{
+"title": "验收：更新一次网站",
+"body": "<p>改 <code>index.html</code> 里的一句话（比如加一行「更新于今天」），重新上传，等几分钟再访问网址。看到变化，就说明你掌握了「更新网站」的完整链路：改文件 → 上传 → 等构建 → 生效。</p>",
+"code": {
+"lang": "bash",
+"label": "操作",
+"text": "# 改文件 → 仓库页 Add file → Upload files → 覆盖上传 → 等几分钟刷新"
+},
+"expected": "能说出：为什么改完要等几分钟才能看到（构建需要时间）。"
+}
+],
+"errors": [
+{
+"t": "访问网址显示 404",
+"s": "最常见的原因是构建还没完成，或者分支没选对。",
+"f": "等 3 分钟再刷新；去 Settings → Pages 确认 Branch 是 main、目录是 (root)。"
+},
+{
+"t": "页面能打开但是没有样式",
+"s": "<code>style.css</code> 没传上去，或文件名对不上。",
+"f": "检查仓库里有没有 <code>style.css</code>；检查 <code>index.html</code> 里 link 的 href 是不是 <code>style.css</code>。"
+},
+{
+"t": "check_site.py 说「引用了不存在的文件」",
+"s": "<code>index.html</code> 里写了 <code>style.css</code>，但文件夹里没这个文件。",
+"f": "把文件名对上：要么补上文件，要么删掉那行引用。"
+},
+{
+"t": "check_site.py 说「出现了本机绝对路径」",
+"s": "图片或链接用了 <code>C:\\...</code> 或 <code>file://</code>，传到网上后别人打不开。",
+"f": "改成相对路径（如 <code>images/a.png</code>），图片文件一起上传。"
+},
+{
+"t": "Settings 里找不到 Pages",
+"s": "仓库是 Private（私有）的，免费版 Pages 需要公开仓库。",
+"f": "Settings → General → 拉到最底 Danger Zone → Change visibility → Public。"
+}
+],
+"checklist": [
+"【写首页】操作：创建 <code>mysite/index.html</code>。预期：双击能用浏览器打开看到内容。",
+"【写样式】操作：创建 <code>mysite/style.css</code>。预期：刷新后页面有颜色和排版。",
+"【本地检查】操作：<code>python3 check_site.py mysite</code>。预期：✅ 全部通过。",
+"【建仓库】操作：在 GitHub 建公开仓库 <code>mysite</code>。预期：仓库地址可访问。",
+"【上传】操作：上传两个文件（不传 check_site.py）。预期：文件列表里有两个文件。",
+"【开Pages】操作：Settings → Pages → main/(root) → Save。预期：1–3 分钟后拿到网址并能访问。",
+"【更新】操作：改一句话重新上传。预期：几分钟后网站变化，能说出为什么有延迟。"
+],
+"exercises": [
+"给你的主页加一张照片：把图片放进 <code>mysite/images/</code>，用 <code>&lt;img src=\"images/xxx.jpg\"&gt;</code> 引用，跑一遍 <code>check_site.py</code> 再上传。",
+"把教程 5 的 <code>query.html</code> 传到这个仓库，试试能不能通过 <code>https://你的用户名.github.io/mysite/query.html</code> 访问它。",
+"想想：如果网站有 10 个页面，每个页面都要复制导航栏，有什么笨办法和聪明办法？"
+]
+}
+
 ];
