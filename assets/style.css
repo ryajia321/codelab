@@ -126,3 +126,33 @@ footer .wrap{display:flex;gap:18px;flex-wrap:wrap;align-items:center}
 .funbox h3{margin:0 0 8px;font-size:16px}
 .funbox p{margin:6px 0;font-size:14px;color:#c9d1d9}
 .funbox .yi{color:#3fb950}.funbox .ji{color:#f85149}
+
+/* ---- 编程小游戏 ---- */
+.game-tabs{display:flex;gap:8px;margin:14px 0}
+.game-tab{padding:8px 20px;border-radius:20px;border:1px solid #30363d;background:#161b22;
+  color:#c9d1d9;cursor:pointer;font-size:14px}
+.game-tab.on{background:#1f6feb;border-color:#1f6feb;color:#fff}
+.game-meta{display:flex;gap:16px;font-size:14px;color:#8b949e;margin-bottom:8px;flex-wrap:wrap}
+.game-meta b{color:#f0b429}
+.game-prog{height:6px;background:#21262d;border-radius:3px;margin-bottom:16px}
+.game-prog i{display:block;height:100%;background:#1f6feb;border-radius:3px;transition:width .3s}
+.game-code{background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:16px;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;line-height:1.8;
+  white-space:pre-wrap;color:#e6edf3}
+.game-q{font-size:16px;font-weight:700;margin:14px 0 10px}
+.game-opts{display:grid;gap:10px}
+.game-opt{padding:12px 16px;border-radius:10px;border:1px solid #30363d;background:#161b22;
+  color:#e6edf3;font-size:15px;text-align:left;cursor:pointer;font-family:ui-monospace,Menlo,Consolas,monospace}
+.game-opt:hover:not(:disabled){border-color:#58a6ff}
+.game-opt:disabled{cursor:default}
+.game-opt.right{border-color:#3fb950;background:#12261a}
+.game-opt.wrong{border-color:#f85149;background:#2e1618}
+.game-why{margin-top:14px;font-size:14px}
+.game-why .why-ok{color:#3fb950;font-weight:700}
+.game-why .why-no{color:#f85149;font-weight:700}
+.game-why p{color:#c9d1d9;margin:8px 0 12px}
+.game-end{text-align:center;padding:20px 0}
+.game-medal{font-size:56px}
+.game-end h3{margin:10px 0}
+.game-end p{color:#c9d1d9}
+.newbest{color:#f0b429;font-weight:700}

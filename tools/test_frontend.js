@@ -45,7 +45,7 @@ const sbA = { console, localStorage: { getItem: () => null, setItem: () => {}, r
 vm.createContext(sbA);
 vm.runInContext(fs.readFileSync(site + '/assets/achievements.js', 'utf8'), sbA);
 const Achv = sbA.window.Achv;
-eq('成就8个', Achv.list.length, 8);
+eq('成就10个', Achv.list.length, 10);
 {
   const f1 = Achv.evaluate({'a':{done:7,total:7}}, {}, 14, []);
   eq('完成1篇解锁2成就', JSON.stringify(f1), JSON.stringify(['first-step','tutorial-done']));
@@ -71,6 +71,32 @@ eq('每日冷知识非空', typeof Achv.dailyFact() === 'string' && Achv.dailyFa
   eq('教程页引入成就脚本', th.includes('assets/achievements.js'), true);
   eq('教程页调用check', th.includes('Achv.check()'), true);
 }
+// ---- 编程小游戏 ----
+const sbG = { console, localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+  document: { getElementById: () => null, querySelectorAll: () => [], createElement: () => ({}) },
+  window: {} };
+vm.createContext(sbG);
+vm.runInContext(fs.readFileSync(site + '/assets/game.js', 'utf8'), sbG);
+const Game = sbG.window.Game;
+eq('猜输出12题', Game.guessCount, 12);
+eq('找Bug6题', Game.bugCount, 6);
+eq('连击2次+10分', Game.pointsFor(2), 10);
+eq('连击3次+15分', Game.pointsFor(3), 15);
+eq('连击5次+15分', Game.pointsFor(5), 15);
+{
+  const gh = fs.readFileSync(site + '/game.html', 'utf8');
+  eq('游戏页引入game.js', gh.includes('assets/game.js'), true);
+  eq('游戏页有双Tab', gh.includes('data-m="guess"') && gh.includes('data-m="bug"'), true);
+  eq('游戏页导航自包含', gh.includes('href="game.html"'), true);
+}
+for(const pg of ['index.html','tutorials.html','tutorial.html','errors.html']){
+  const h = fs.readFileSync(site + '/' + pg, 'utf8');
+  eq(pg + '导航有小游戏', h.includes('game.html'), true);
+}
+eq('404导航有小游戏', fs.readFileSync(site + '/404.html', 'utf8').includes('/codelab/game.html'), true);
+eq('有游戏达人成就', sbA.window.Achv.list.some(a => a.id === 'game-master'), true);
+eq('有全对通关成就', sbA.window.Achv.list.some(a => a.id === 'game-perfect'), true);
+eq('grant函数存在', typeof sbA.window.Achv.grant === 'function', true);
 // ---- app.js 沙箱 ----
 const mkEl = () => ({ style: {}, textContent: '', innerHTML: '', value: '',
   setAttribute() {}, focus() {}, select() {}, setSelectionRange() {}, remove() {},

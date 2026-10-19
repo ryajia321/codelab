@@ -16,7 +16,9 @@ var ACHIEVEMENTS = [
   { id: "all-six",     emoji: "🏆", name: "六边形战士", desc: "做完全部 6 篇教程" },
   { id: "webmaster",   emoji: "🚀", name: "站长诞生", desc: "做完《发布你的第一个网站》" },
   { id: "night-owl",   emoji: "🦉", name: "夜猫子", desc: "在凌晨 0–5 点勾选过步骤" },
-  { id: "week-triple", emoji: "⚡", name: "一周三杀", desc: "7 天内做完 3 篇教程" }
+  { id: "week-triple", emoji: "⚡", name: "一周三杀", desc: "7 天内做完 3 篇教程" },
+  { id: "game-master", emoji: "🎮", name: "游戏达人", desc: "小游戏中单局拿到 100 分" },
+  { id: "game-perfect", emoji: "💯", name: "全对通关", desc: "小游戏中一局全部答对" }
 ];
 
 function lsGet(k, fb){ try{ var v = JSON.parse(localStorage.getItem(k)); return v || fb; }catch(e){ return fb; } }
@@ -162,8 +164,18 @@ function renderWall(elId){
   }).join('');
 }
 
+function grant(id){
+  var unlocked = lsGet("codelab_achv", {});
+  if(!unlocked[id]){
+    unlocked[id] = Date.now();
+    lsSet("codelab_achv", unlocked);
+    toast(id);
+  }
+}
+
 window.Achv = {
   list: ACHIEVEMENTS, evaluate: evaluate, check: checkAndCelebrate, markDone: markDone,
+  grant: grant,
   renderWall: renderWall, dailyFact: dailyFact, dailyYiJi: dailyYiJi, toast: toast
 };
 })();

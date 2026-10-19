@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>编程小游戏 - CodeLab 码上实践</title>
+<meta name="description" content="猜输出、找Bug：用玩游戏的方式检验 Python 基本功。">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="wrap">
+<a class="logo" href="index.html">CodeLab <b>码上实践</b></a>
+<nav class="nav"><a href="index.html">首页</a><a href="tutorials.html">教程</a><a href="game.html">小游戏</a><a href="errors.html">报错排查</a></nav>
+</div></header>
+<main class="wrap">
+<div class="crumb"><a href="index.html">首页</a> / 小游戏</div>
+<h1 class="t-title">🎮 编程小游戏</h1>
+<p style="color:var(--mut)">学累了？玩两局。答对 +10 分，连击 3 次以上每题 +15 分。最高分存在你本机。</p>
+<div class="game-tabs">
+<button class="game-tab on" data-m="guess">🔮 猜输出</button>
+<button class="game-tab" data-m="bug">🐞 找Bug</button>
+</div>
+<div id="gameBox"></div>
+<div class="funbox" style="margin-top:20px">
+<h3>🏅 游戏成就</h3>
+<p>单局 100 分 → <b>🎮 游戏达人</b>；一局全对 → <b>💯 全对通关</b>。去首页成就墙看看。</p>
+</div>
+</main>
+<footer><div class="wrap">
+<span>CodeLab 码上实践</span><a href="tutorials.html">教程</a><a href="errors.html">报错排查</a><span style="margin-left:auto">静态网站 · 无需登录</span>
+</div></footer>
+<script src="assets/app.js"></script>
+<script src="assets/achievements.js"></script>
+<script src="assets/game.js"></script>
+<script>window.Game.init();</script>
+</body>
+</html>
