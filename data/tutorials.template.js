@@ -241,4 +241,202 @@ exercises: [
 "试试 <code>--output</code> 指定一个绝对路径（仍在演示目录内），观察脚本是否接受；再试一个演示目录外的路径，看拒绝提示。"
 ]
 }
+,
+{
+"id": "python-clean-excel",
+"title": "用 Python 自动清理 Excel 数据",
+"category": "Python 入门",
+"level": "零基础",
+"minutes": 60,
+"summary": "给一份脏兮兮的订单表做「体检+手术」：先看检查报告（三档模式），再一键修正格式、删除空白行，重复的行只标记不乱删，原始文件一个字节都不动。",
+"goals": [
+"用 openpyxl 精确读写 Excel 单元格（含真实日期格与文本的区别）",
+"理解「先判定后清洗」：重复判定看原始值+类型，不许先规范化再判",
+"掌握三档模式：--check 预览、默认执行、--deduplicate-exact 显式去重",
+"独立核对清理结果：行数、修正数、警告数对不对，原始文件动没动"
+],
+"env": [
+"电脑上装了 Python 3（第一篇教程的环境就行）",
+"会打开终端（Mac/Linux）或 PowerShell（Windows）",
+"支持的操作系统：macOS / Linux / Windows 10+（PowerShell）。Windows 用户：教程里凡是写 <code>python3</code> 的地方换成 <code>py</code>，<code>pip install</code> 换成 <code>py -m pip install</code>",
+"只支持 .xlsx 格式（现在 Excel/WPS 默认存的就是这个）",
+"不用安装 Office 或 WPS 也能跑"
+],
+"steps": [
+{
+"title": "确认依赖：openpyxl",
+"body": "<p>本篇读写 Excel 只用 <code>openpyxl</code>（第二篇装过就不用重装）。为什么不用 pandas？因为 pandas 读 Excel 时会「自作主张」改类型（比如把文本数字转成数字），而重复判定必须看 Excel 里<strong>原始的单元格类型</strong>——数字 10 和文本 \"10\" 看着一样，类型不同就不能算重复。</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 -c \"import openpyxl; print('依赖就绪')\""
+},
+"expected": "看到 <code>依赖就绪</code> 就是成功。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "py -c \"import openpyxl; print('依赖就绪')\""
+},
+"expected2": "如果报错 ModuleNotFoundError，运行 <code>py -m pip install openpyxl</code> 再试。"
+},
+{
+"title": "生成 12 行脏数据",
+"body": "<p>先造一份「脏订单表」练手：12 行虚构数据，埋了 5 类常见脏数据。注意第 2 行和第 5 行——它们逐格<strong>同值同类型</strong>（日期都是真正的日期格），是真重复；第 3 行和第 12 行订单号相同但内容不同，是疑似重复，脚本永远不会自动删它们。</p><p>先建演示目录，再运行生成程序：</p><div class=\"tip\"><b>注意：</b>生成程序默认<strong>不覆盖</strong>已存在的 <code>脏订单.xlsx</code>（防止盖掉你的真实文件）。想重新生成示例，先确认再加 <code>--force</code>。</div>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "mkdir -p ~/excel-clean-demo\npython3 make_dirty_samples.py ~/excel-clean-demo"
+},
+"expected": "终端显示「已生成 脏订单.xlsx（12 行数据，全部虚构）」，<code>~/excel-clean-demo/输入/</code> 下出现 <code>脏订单.xlsx</code>。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "New-Item -ItemType Directory -Force -Path \"$HOME\\excel-clean-demo\" | Out-Null\npy make_dirty_samples.py \"$HOME\\excel-clean-demo\""
+},
+"expected2": "同上。用资源管理器打开 <code>输入</code> 文件夹能看到 <code>脏订单.xlsx</code>。",
+"code3": {
+"lang": "python",
+"label": "make_dirty_samples.py",
+"text": __MAKE_DIRTY_PY__
+}
+},
+{
+"title": "写清理脚本 clean_excel.py",
+"body": "<p>把下面的代码保存为 <code>clean_excel.py</code>。先看懂它的安全策略（这也是本篇的核心）：</p><p>① <strong>三档模式</strong>：<code>--check</code> 只看报告不写任何文件；默认模式只修正格子、删空白行，<strong>不删任何含数据的行</strong>；<code>--deduplicate-exact</code> 才显式删除整行完全相同的重复。<br>② <strong>重复判定看原始快照</strong>：用 openpyxl 直接读单元格的值+类型，判定发生在清洗之前，禁止先规范化再判。类型不同不算重复（数字 10 和文本 \"10\"）。<br>③ <strong>原始文件只读</strong>：输出写到 <code>输出/</code> 目录，默认拒绝覆盖（原子创建），输出不能等于输入，<code>--force</code> 也拦不住；<code>--output</code> 只支持 <code>.xlsx</code>。<br>④ <strong>符号链接一律拒绝</strong>：输出目标本身是链接、<code>输入/</code>/<code>输出/</code> 目录本身是链接，都直接拒绝。<br>⑤ <strong>支持范围先讲清楚</strong>：含<strong>公式</strong>的表直接拒绝（无法可靠地保留公式，绝不静默丢弃）；带<strong>时间部分</strong>（时分秒）的日期直接拒绝（绝不静默截断）；金额/数量只按严格格式转换，拿不准的一律保留原文+警告。</p>",
+"code": {
+"lang": "python",
+"label": "clean_excel.py",
+"text": __CLEAN_EXCEL_PY__
+},
+"expected": "文件保存成功，待会儿直接运行。"
+},
+{
+"title": "先检查：--check 看体检报告",
+"body": "<p>动手前先看「体检报告」。<code>--check</code> 是严格零写入的：不创建输出目录、不写临时文件，只在终端显示报告。你可以验证——跑完后 <code>输出/</code> 目录根本不存在：</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 clean_excel.py ~/excel-clean-demo --check"
+},
+"expected": "报告显示：原始数据行数 12，自动修正 4 格，删除 1 行（空白行），警告 4 条；重复组 G1（第 2、5 行）标记未删除；订单号 A002 疑似重复，保留两条。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "py clean_excel.py \"$HOME\\excel-clean-demo\" --check"
+},
+"expected2": "同上。"
+},
+{
+"title": "执行清理并核对结果",
+"body": "<p>不加参数就是默认执行。跑完后做三件事核对：①报告里的四个数字（12 / 4 / 1 / 4）；②打开 <code>输出/清理后.xlsx</code> 抽查：<code>¥450</code> 变成了 450，<code>3件</code> 变成了 3，订单号 <code>00012</code> 的前导零还在，<code>待定</code> 和 <code>10/07</code> 原样保留；③确认原始文件没被动过（对比修改时间，或重新跑一遍 <code>--check</code> 结果一致）。</p><div class=\"tip\"><b>提示：</b>报告文件叫 <code>清理后_报告.txt</code>，名字跟着输出文件名走——你用 <code>--output</code> 换名，报告也会跟着换名。</div>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 clean_excel.py ~/excel-clean-demo"
+},
+"expected": "<code>输出/</code> 下出现 <code>清理后.xlsx</code>（11 行数据）和 <code>清理后_报告.txt</code>。再跑一次会看到「输出文件已存在，拒绝覆盖」——这是保护，不是报错。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "py clean_excel.py \"$HOME\\excel-clean-demo\""
+},
+"expected2": "同上。"
+},
+{
+"title": "理解去重：什么才算「完全相同」",
+"body": "<p>默认模式下，第 2 行和第 5 行只是被<strong>标记</strong>，没有被删除——因为删数据行的决定权在你手里。只有当你看过报告、确认它们真是重复时，才显式加 <code>--deduplicate-exact</code>。注意这次输出文件名换了（<code>去重版.xlsx</code>），并且因为报告文件已存在，需要加 <code>--force</code> 才能覆盖：</p><p>记住两条铁律：① <strong>类型不同不算重复</strong>——数字 10 和文本 \"10\" 看着一样，但原始类型不同，两行都保留；② <strong>订单号相同但内容不同，永远保留并警告</strong>，脚本不会替你删。</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 clean_excel.py ~/excel-clean-demo --deduplicate-exact --output 去重版.xlsx --force"
+},
+"expected": "报告显示删除 2 行（空白行 + 第 5 行），<code>去重版.xlsx</code> 剩 10 行数据。对比 <code>清理后.xlsx</code>（11 行），少的那行正是第 5 行。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "py clean_excel.py \"$HOME\\excel-clean-demo\" --deduplicate-exact --output 去重版.xlsx --force"
+},
+"expected2": "同上。"
+},
+{
+"title": "验收：说出每一步在保护什么",
+"body": "<p>最后做一遍完整流程，确认你理解了每个保护动作：<code>--check</code>（零写入预览）→ 默认执行（核对 4 个数字）→ 检查输出文件 → 确认原始文件未动。能说出下面三个问题的答案，这篇就算真正掌握了：</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 clean_excel.py ~/excel-clean-demo --check | head -8"
+},
+"expected": "能用自己的话说出：① 为什么默认模式不删重复行；② 数字 10 和文本 \"10\" 为什么不算重复；③ 输出已存在时脚本为什么拒绝覆盖。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "py clean_excel.py \"$HOME\\excel-clean-demo\" --check"
+},
+"expected2": "同上。"
+}
+],
+"errors": [
+{
+"t": "ModuleNotFoundError: No module named 'openpyxl'",
+"s": "依赖没装上，或装到了另一个 Python 里。",
+"f": "运行 <code>pip install openpyxl</code>（Windows 用 <code>py -m pip install openpyxl</code>），再跑 <code>python3 -c \"import openpyxl\"</code> 验证。"
+},
+{
+"t": "输入文件不存在",
+"s": "演示目录下没有 <code>输入/脏订单.xlsx</code>。",
+"f": "先跑第 2 步的 <code>make_dirty_samples.py</code> 生成示例；如果是自己的表，用 <code>--input 你的文件名.xlsx</code> 指定（文件要放在演示目录的 <code>输入/</code> 下）。"
+},
+{
+"t": "表格没有数据行",
+"s": "Excel 里只有表头，没有数据。",
+"f": "检查文件是不是选错了，或者表头行是不是空行开头。"
+},
+{
+"t": "缺少必要列",
+"s": "表的列名和脚本要的不一样。",
+"f": "脚本要求 6 列：订单号、客户、商品、数量、金额、下单日期。把列名改成一致再跑。"
+},
+{
+"t": "输出文件已存在，拒绝覆盖",
+"s": "这不是报错，是脚本在保护你：防止新结果盖掉旧结果。",
+"f": "确认旧输出不要了就加 <code>--force</code>；想保留旧的就用 <code>--output 新名字.xlsx</code> 换名。"
+},
+{
+"t": "检测到公式单元格",
+"s": "表里有公式。脚本无法可靠地保留公式，所以直接拒绝，不会静默把公式变成数值。",
+"f": "在 Excel/WPS 里把公式计算结果「粘贴为数值」后，再跑脚本。"
+},
+{
+"t": "检测到带时间部分的日期时间",
+"s": "某格日期带时分秒。脚本不会静默截断时间，所以直接拒绝。",
+"f": "确认时间部分不需要，改成纯日期后再跑；时间重要的话，这个版本处理不了。"
+},
+{
+"t": "--output 只支持 .xlsx 文件",
+"s": "输出文件名用了别的扩展名（如 .csv）。",
+"f": "改成 <code>.xlsx</code> 后缀再跑。"
+},
+{
+"t": "（生成器）目标文件已存在，不覆盖",
+"s": "生成程序默认不覆盖已存在的 <code>脏订单.xlsx</code>，防止盖掉你的真实文件。",
+"f": "确认要重新生成示例，就加 <code>--force</code>。"
+}
+],
+"checklist": [
+"【依赖】操作：<code>python3 -c \"import openpyxl\"</code>。预期：不报错，打印依赖就绪。",
+"【生成示例】操作：运行 <code>make_dirty_samples.py ~/excel-clean-demo</code>。预期：<code>输入/脏订单.xlsx</code> 生成，12 行虚构数据。",
+"【检查模式】操作：<code>python3 clean_excel.py ~/excel-clean-demo --check</code>。预期：报告显示 12 / 4 / 1 / 4；<code>输出/</code> 目录不存在（零写入）。",
+"【默认执行】操作：<code>python3 clean_excel.py ~/excel-clean-demo</code>。预期：<code>输出/清理后.xlsx</code> 11 行数据，<code>清理后_报告.txt</code> 生成；再跑一次被拒绝覆盖。",
+"【结果核对】操作：打开输出文件抽查。预期：<code>¥450</code>→450、<code>3件</code>→3、前导零 <code>00012</code> 保留、<code>待定</code>/<code>10/07</code> 原样保留并有警告。",
+"【显式去重】操作：<code>--deduplicate-exact --output 去重版.xlsx --force</code>。预期：删除 2 行剩 10 行；A002 的两行始终保留。",
+"【支持范围】操作：在表里加一个公式（如 <code>=B2*1</code>）再跑。预期：脚本拒绝并提示「检测到公式单元格」，原始文件未动、没有新输出。",
+"【生成器保护】操作：不删除 <code>输入/脏订单.xlsx</code> 直接重跑 <code>make_dirty_samples.py</code>。预期：提示「目标文件已存在，不覆盖」，文件字节不变。",
+"【说出原理】能用自己的话说出：为什么重复判定要看原始类型、默认模式为什么不删行、数字 10 和文本 \"10\" 为什么不算重复。"
+],
+"exercises": [
+"把 <code>make_dirty_samples.py</code> 里第 8 行的客户改成你自己的名字重跑，观察 strip 逻辑对没有空格的名字做了什么（修正数应该不变）。",
+"故意在 <code>输入/</code> 里放一个缺少「金额」列的表，运行看脚本报什么，再把列补上。",
+"试试 <code>--output x.csv</code>（扩展名不对）和 <code>--output /tmp/x.xlsx</code>（目录外），观察两种拒绝提示有什么不同；再试 <code>--check</code>，确认零写入。"
+]
+}
 ];

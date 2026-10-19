@@ -11,6 +11,16 @@ const t = TS[0];
 eq('教程1有7步', t.steps.length, 7);
 eq('步骤2有Windows代码块', !!t.steps[1].code2, true);
 eq('展示代码==实测文件', t.steps[2].code.text === fs.readFileSync(site + '/tutorials/python-organize-files/organize.py', 'utf8'), true);
+eq('教程3有7步', TS[2].steps.length, 7);
+eq('教程3步骤2有Windows代码块', !!TS[2].steps[1].code2, true);
+eq('教程3清理脚本==实测文件', TS[2].steps[2].code.text === fs.readFileSync(site + '/tutorials/python-clean-excel/clean_excel.py', 'utf8'), true);
+eq('教程3生成脚本==实测文件', TS[2].steps[1].code3.text === fs.readFileSync(site + '/tutorials/python-clean-excel/make_dirty_samples.py', 'utf8'), true);
+eq('教程3含--check', TS[2].steps[3].code.text.includes('--check'), true);
+eq('教程3说明公式拒绝', TS[2].steps[2].body.includes('无法可靠地保留公式'), true);
+eq('教程3说明时间拒绝', TS[2].steps[2].body.includes('绝不静默截断'), true);
+eq('教程3有公式报错条目', TS[2].errors.some(e => e.t.includes('公式')), true);
+eq('教程3生成器不覆盖说明', TS[2].steps[1].body.includes('不覆盖'), true);
+eq('教程3验收清单9项', TS[2].checklist.length, 9);
 // ---- app.js 沙箱 ----
 const mkEl = () => ({ style: {}, textContent: '', innerHTML: '', value: '',
   setAttribute() {}, focus() {}, select() {}, setSelectionRange() {}, remove() {},
