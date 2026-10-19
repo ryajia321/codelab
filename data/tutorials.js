@@ -89,5 +89,156 @@ exercises: [
 "新建第二个演示文件夹，只放 3 个不同类型的文件，用脚本整理它。",
 "故意在「文档」文件夹里预置一个同名文件，再跑一次，观察跳过提示。"
 ]
+},
+{
+"id": "python-merge-excel",
+"title": "用 Python 汇总多个 Excel 表格",
+"category": "Python 入门",
+"level": "零基础",
+"minutes": 60,
+"summary": "把多个结构相同的 Excel 一键合并成一张总表：自动数行数、列名不对会报警、空文件坏文件自动跳过，原始文件一个都不动。",
+"goals": [
+"用 pip 安装第三方库（pandas / openpyxl）",
+"用 Python 读取、合并、写出 Excel 文件",
+"理解「先校验再合并」：列名不对、文件损坏时明确报告而不是静默错位",
+"独立核对汇总结果：行数对不对、数据从哪来"
+],
+"env": [
+"电脑上装了 Python 3（第一篇教程的环境就行）",
+"会打开终端（Mac/Linux）或 PowerShell（Windows）",
+"支持的操作系统：macOS / Linux / Windows 10+（PowerShell）。Windows 用户：教程里凡是写 <code>python3</code> 的地方换成 <code>py</code>，<code>pip install</code> 换成 <code>py -m pip install</code>",
+"只支持 .xlsx 格式（现在 Excel/WPS 默认存的就是这个）。很老的 .xls 格式不支持，脚本会明确告诉你另存为 .xlsx",
+"不用安装 Office 或 WPS 也能跑，读写 Excel 全靠 pandas"
+],
+"steps": [
+{
+"title": "安装依赖：pandas 和 openpyxl",
+"body": "<p>Python 自带的功能读写不了 Excel，需要装两个第三方库：<code>pandas</code>（处理表格数据）和 <code>openpyxl</code>（读写 .xlsx 文件）。装一次，以后一直能用：</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "pip install pandas openpyxl\npython3 -c \"import pandas, openpyxl; print('依赖就绪')\""
+},
+"expected": "看到 <code>依赖就绪</code> 就是成功。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "py -m pip install pandas openpyxl\npy -c \"import pandas, openpyxl; print('依赖就绪')\""
+},
+"expected2": "如果安装很慢或报错，看文末报错排查第 2 条（换国内镜像源）。"
+},
+{
+"title": "建演示目录，一键生成示例文件",
+"body": "<p>老规矩：<b>绝不拿真实表格练手</b>。建演示目录 <code>~/excel-demo</code>，然后新建 <code>make_samples.py</code>，粘贴下面代码——它会生成 3 个虚构的销售表示例（1月/2月/3月，各 2 行，全是假数据）：</p>",
+"code": {
+"lang": "python",
+"label": "make_samples.py（生成示例数据，已实测）",
+"text": "#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n\"\"\"\n生成 3 个示例 Excel（1月/2月/3月销售表），供《用 Python 汇总多个 Excel 表格》教程演示用。\n数据为虚构示例，不含任何真实信息。\n\n用法：python3 make_samples.py 演示目录\n将在「演示目录/输入/」下生成 1月.xlsx、2月.xlsx、3月.xlsx（各 2 行，共 6 行）。\n\"\"\"\nimport os\nimport sys\n\nimport pandas as pd\n\n\ndef main():\n    demo = os.path.realpath(sys.argv[1]) if len(sys.argv) > 1 else os.path.expanduser(\"~/excel-demo\")\n    home = os.path.realpath(os.path.expanduser(\"~\"))\n    if demo == home or not demo.startswith(home + os.sep):\n        print(\"拒绝：请指定主目录下的演示目录。\")\n        return 2\n    in_dir = os.path.join(demo, \"输入\")\n    os.makedirs(in_dir, exist_ok=True)\n\n    samples = {\n        \"1月.xlsx\": [(\"苹果\", 120, 360), (\"香蕉\", 200, 400)],\n        \"2月.xlsx\": [(\"苹果\", 150, 450), (\"橙子\", 180, 540)],\n        \"3月.xlsx\": [(\"香蕉\", 220, 440), (\"橙子\", 160, 480)],\n    }\n    for fname, rows in samples.items():\n        df = pd.DataFrame(rows, columns=[\"商品\", \"数量\", \"金额\"])\n        df.to_excel(os.path.join(in_dir, fname), index=False, engine=\"openpyxl\")\n        print(\"已生成 %s（%d 行）\" % (fname, len(df)))\n    print(\"共 6 行示例数据，放在：%s\" % in_dir)\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+},
+"expected": "文件保存成功。然后运行它生成示例：",
+"code2": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "mkdir -p ~/excel-demo\ncd ~/excel-demo\npython3 make_samples.py ~/excel-demo\nls 输入/"
+},
+"expected2": "看到 <code>1月.xlsx 2月.xlsx 3月.xlsx</code> 和「共 6 行示例数据」。Windows 用 <code>py make_samples.py ~/excel-demo</code>，<code>ls</code> 换成 <code>dir 输入</code>。"
+},
+{
+"title": "写汇总脚本 merge_excel.py",
+"body": "<p>在 <code>~/excel-demo</code> 里新建 <code>merge_excel.py</code>，粘贴完整代码。先看文件头注释里的安全策略，再看懂核心逻辑：<b>逐个文件校验（列名/空文件/损坏/重复表头）→ 只合并通过的 → 写出总表并附带「来源文件」列</b>：</p><div class=\"tip\"><b>设计思路：</b>第一个成功读取的文件定下「标准列名」，后面每个文件都对照：列名不一样就跳过并告诉你期望列和实际列，绝不把错位的数据硬拼在一起。</div>",
+"code": {
+"lang": "python",
+"label": "merge_excel.py（完整代码，已实测）",
+"text": "#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n\"\"\"\nExcel 汇总小助手 v1.0\n把「演示目录/输入/」下的多个 .xlsx 文件合并成一张总表，\n写到「演示目录/输出/汇总结果.xlsx」（附带\"来源文件\"列方便核对）。\n\n安全策略：\n  1. 只读「演示目录/输入/」顶层文件，不递归，不扫描电脑其他位置；\n  2. 绝不修改、删除原始文件（只读方式打开）；\n  3. 输出文件已存在时默认拒绝覆盖，提示用 --output 换名或加 --force 明确覆盖；\n  4. 输出位置必须在演示目录内，且不能在输入目录里（避免下次运行重复汇总）；\n  5. 列名不一致、空文件、损坏文件、重复表头：逐个文件明确报告并跳过，不静默错位；\n  6. 来源符号链接、隐藏文件默认跳过；旧格式 .xls 明确提示不支持；\n  7. 演示目录必须位于用户主目录内（realpath 解析后判断），拒绝根目录/主目录本身/符号链接入口。\n\n依赖：pip install pandas openpyxl（只支持 .xlsx 格式）\n\n用法：\n  python3 merge_excel.py 演示目录                  # 输入=演示目录/输入，输出=演示目录/输出/汇总结果.xlsx\n  python3 merge_excel.py 演示目录 --output 总表2.xlsx\n  python3 merge_excel.py 演示目录 --force           # 允许覆盖已存在的输出文件\n\n退出码：0 成功；1 运行失败（无文件可合并/输出已存在等）；2 用法或安全拒绝。\n\"\"\"\nimport argparse\nimport os\nimport sys\n\nimport pandas as pd\nfrom openpyxl import load_workbook\n\n\ndef real_home():\n    return os.path.realpath(os.path.expanduser(\"~\"))\n\n\ndef check_demo(demo):\n    \"\"\"返回 (真实路径, None) 或 (None, 错误信息)。\"\"\"\n    if os.path.islink(demo):\n        return None, \"拒绝：入口不能是符号链接（当前：%s）\" % demo\n    demo = os.path.realpath(demo)\n    if not os.path.isdir(demo):\n        return None, \"目录不存在：%s\" % demo\n    home = real_home()\n    if demo == os.path.sep:\n        return None, \"拒绝：不能使用系统根目录\"\n    if demo == home:\n        return None, \"拒绝：不能直接使用用户主目录，请指定主目录下的演示目录\"\n    if not demo.startswith(home + os.sep):\n        return None, \"拒绝：只能使用用户主目录内的演示目录（当前：%s）\" % demo\n    return demo, None\n\n\ndef raw_headers(path):\n    \"\"\"用 openpyxl 直接读第一行表头（pandas 读进来会把重复列名静默改成\"商品.1\"，看不出重复）。\"\"\"\n    wb = load_workbook(path, read_only=True, data_only=True)\n    try:\n        ws = wb.active\n        row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)\n    finally:\n        wb.close()\n    return [str(v) if v is not None else \"\" for v in (row or [])]\n\n\ndef read_one(path):\n    \"\"\"读取单个 Excel。返回 (df, None) 或 (None, 跳过原因)。只读，不修改文件。\"\"\"\n    try:\n        headers = raw_headers(path)\n    except Exception as e:  # 损坏文件、密码保护等都在这里兜住\n        return None, \"文件损坏或无法读取（%s），已跳过\" % e\n    if len(headers) != len(set(headers)):\n        return None, \"表头有重复的列名，已跳过（请先修正表头再汇总）\"\n    try:\n        df = pd.read_excel(path, engine=\"openpyxl\")\n    except Exception as e:\n        return None, \"文件损坏或无法读取（%s），已跳过\" % e\n    if len(df) == 0:\n        return None, \"空文件（只有表头、没有数据行），已跳过\"\n    return df, None\n\n\ndef main():\n    ap = argparse.ArgumentParser(description=\"汇总演示目录/输入/下的 Excel（默认不覆盖输出）\")\n    ap.add_argument(\"demo_dir\", help=\"演示目录路径（其下应有 输入/ 文件夹）\")\n    ap.add_argument(\"--output\", default=\"汇总结果.xlsx\", help=\"输出文件名（默认 汇总结果.xlsx，放在演示目录/输出/下）\")\n    ap.add_argument(\"--force\", action=\"store_true\", help=\"允许覆盖已存在的输出文件\")\n    a = ap.parse_args()\n\n    demo, err = check_demo(a.demo_dir)\n    if err:\n        print(err)\n        return 2\n\n    in_dir = os.path.join(demo, \"输入\")\n    if not os.path.isdir(in_dir):\n        print(\"输入文件夹不存在：%s\\n请先在演示目录下建好 输入/ 文件夹并放入 Excel 文件。\" % in_dir)\n        return 2\n\n    out_dir = os.path.join(demo, \"输出\")\n    # --output 允许相对名（放进 输出/）或绝对路径（必须仍在演示目录内）\n    out_path = a.output if os.path.isabs(a.output) else os.path.join(out_dir, a.output)\n    out_path = os.path.realpath(out_path)\n    if out_path != demo and not out_path.startswith(demo + os.sep):\n        print(\"拒绝：输出文件必须在演示目录内（当前：%s）\" % out_path)\n        return 2\n    if out_path == in_dir or out_path.startswith(in_dir + os.sep):\n        print(\"拒绝：输出文件不能放在输入目录里，否则下次运行会把它当成输入重复汇总。\")\n        return 2\n    if os.path.lexists(out_path) and not a.force:\n        print(\"输出文件已存在，拒绝覆盖：%s\" % out_path)\n        print(\"请用 --output 新文件名 指定别的名字，或确认要覆盖时加 --force。\")\n        return 1\n\n    try:\n        names = sorted(os.listdir(in_dir))\n    except OSError as e:\n        print(\"读取输入文件夹失败：%s\" % e)\n        return 1\n\n    frames, skipped, expected_cols = [], [], None\n    total_rows = 0\n    for name in names:\n        src = os.path.join(in_dir, name)\n        if os.path.islink(src):\n            skipped.append((name, \"符号链接，默认跳过（不跟随）\"))\n            continue\n        if os.path.isdir(src):\n            continue  # 不递归\n        if name.startswith(\".\"):\n            skipped.append((name, \"隐藏文件，跳过\"))\n            continue\n        ext = os.path.splitext(name)[1].lower()\n        if ext == \".xls\":\n            skipped.append((name, \"旧格式 .xls 不支持，请用 Excel 另存为 .xlsx 后再汇总\"))\n            continue\n        if ext != \".xlsx\":\n            skipped.append((name, \"不是 .xlsx 文件，跳过\"))\n            continue\n        df, reason = read_one(src)\n        if reason:\n            skipped.append((name, reason))\n            continue\n        cols = [str(c) for c in df.columns]\n        if expected_cols is None:\n            expected_cols = cols\n        elif cols != expected_cols:\n            skipped.append((name, \"列名与第一个文件不一致，已跳过\\n      期望列：%s\\n      实际列：%s\" % (expected_cols, cols)))\n            continue\n        df = df.copy()\n        df[\"来源文件\"] = name\n        frames.append(df)\n        total_rows += len(df)\n        print(\"已读取：%s（%d 行）\" % (name, len(df)))\n\n    if skipped:\n        print(\"\\n===== 跳过 %d 个文件 =====\" % len(skipped))\n        for name, reason in skipped:\n            print(\"  %s ：%s\" % (name, reason))\n\n    if not frames:\n        print(\"\\n没有可合并的文件，未生成汇总。\")\n        return 1\n\n    merged = pd.concat(frames, ignore_index=True)\n    try:\n        os.makedirs(out_dir, exist_ok=True)\n        merged.to_excel(out_path, index=False, engine=\"openpyxl\")\n    except OSError as e:\n        print(\"写入输出文件失败：%s\" % e)\n        return 1\n\n    print(\"\\n===== 汇总完成 =====\")\n    print(\"合并文件数：%d，数据总行数：%d\" % (len(frames), total_rows))\n    print(\"输出文件：%s\" % out_path)\n    print(\"提示：用 Excel 打开输出文件，核对总行数，并可用「来源文件」列追溯每一行来自哪个文件。\")\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+},
+"expected": "文件保存成功。<code>ls ~/excel-demo</code>（Windows 用 <code>dir</code>）能看到两个 .py 文件和 <code>输入/</code> 文件夹。"
+},
+{
+"title": "运行汇总",
+"body": "<p>进到演示目录，运行脚本（参数就是演示目录本身，脚本自己会找里面的 <code>输入/</code> 文件夹）：</p>",
+"code": {
+"lang": "bash",
+"label": "终端",
+"text": "cd ~/excel-demo\npython3 merge_excel.py ~/excel-demo"
+},
+"expected": "看到「已读取：1月.xlsx（2 行）」「已读取：2月.xlsx（2 行）」「已读取：3月.xlsx（2 行）」，最后「合并文件数：3，数据总行数：6」和输出路径 <code>~/excel-demo/输出/汇总结果.xlsx</code>。（Windows 把 <code>python3</code> 换成 <code>py</code>。）"
+},
+{
+"title": "核对结果：行数和内容",
+"body": "<p>汇总完不能只看「成功」两个字就完事，亲手核对：</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 -c \"\nimport pandas as pd\ndf = pd.read_excel('输出/汇总结果.xlsx')\nprint('总行数：', len(df))\nprint('列名：', list(df.columns))\nprint(df[['商品','来源文件']].to_string(index=False))\n\""
+},
+"expected": "总行数 6，列是 <code>商品/数量/金额/来源文件</code>。「来源文件」列告诉你每一行来自哪个原始文件——这是核对数据内容的关键。也可以直接用 Excel/WPS 打开 <code>输出/汇总结果.xlsx</code> 肉眼检查。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "py -c \"import pandas as pd; df = pd.read_excel('输出/汇总结果.xlsx'); print('总行数：', len(df)); print('列名：', list(df.columns))\""
+},
+"expected2": "Windows 上引号嵌套容易出错，直接用 Excel/WPS 打开输出文件检查更省心。"
+},
+{
+"title": "安全验证：亲手制造四种边界情况",
+"body": "<p>下面 4 组操作请<b>亲自执行</b>，验证脚本的保护是真的（每条 <code>python3 -c</code> 里都是单引号，Windows 照抄只换 <code>py</code>）：</p>",
+"code": {
+"lang": "bash",
+"label": "终端",
+"text": "cd ~/excel-demo\n# 1) 列名不一致：把\"数量\"改成\"单价\"\npython3 -c \"import pandas as pd; pd.DataFrame([('苹果',9.9)], columns=['商品','单价']).to_excel('输入/列名不对.xlsx', index=False)\"\n# 2) 空文件：只有表头没有数据行\npython3 -c \"import pandas as pd; pd.DataFrame(columns=['商品','数量','金额']).to_excel('输入/空文件.xlsx', index=False)\"\n# 3) 损坏文件：假冒的 xlsx\n echo \"我是假的excel\" > 输入/坏文件.xlsx\n# 4) 重复表头：两个\"商品\"列\npython3 -c \"import pandas as pd; df=pd.DataFrame([[1,2,3]]); df.columns=['商品','商品','金额']; df.to_excel('输入/重复表头.xlsx', index=False)\"\n# 输出已存在，换个名字再跑\npython3 merge_excel.py ~/excel-demo --output 边界测试.xlsx"
+},
+"expected": "输出里 4 个文件各有一条明确的跳过原因：列名不对（还列出期望列和实际列）、空文件、损坏文件、重复表头。3 个正常文件照常合并。注意第 4 步已经生成过 <code>汇总结果.xlsx</code>，所以这里用 <code>--output 边界测试.xlsx</code> 换名——直接重跑会看到「输出文件已存在，拒绝覆盖」的保护提示，可以亲自试一次。"
+},
+{
+"title": "验收：对照清单逐项打勾",
+"body": "<p>全部完成后，对着下面的清单在教程页面上逐项勾选：</p>"
+}
+],
+"errors": [
+{
+"t": "ModuleNotFoundError: No module named 'pandas'",
+"s": "依赖没装上，或装到了另一个 Python 里。",
+"f": "重跑安装命令。Windows 必须用 <code>py -m pip install pandas openpyxl</code>（<code>py -m pip</code> 保证装到 <code>py</code> 对应的 Python 里）；Mac/Linux 如果 <code>pip</code> 不认识，试 <code>python3 -m pip install pandas openpyxl</code>。"
+},
+{
+"t": "pip install 很慢或报错",
+"s": "默认从国外源下载，网络不好会超时。",
+"f": "换国内镜像：<code>pip install pandas openpyxl -i https://pypi.tuna.tsinghua.edu.cn/simple</code>（Windows 前面加 <code>py -m</code>）。"
+},
+{
+"t": "输入文件夹不存在",
+"s": "演示目录下没有 输入/ 文件夹，或路径写错了。",
+"f": "先 <code>cd ~/excel-demo</code> 确认位置，再 <code>mkdir 输入</code>（Windows PowerShell 同样可用 <code>mkdir</code>）。"
+},
+{
+"t": "输出文件已存在，拒绝覆盖",
+"s": "这不是报错，是保护机制在工作。",
+"f": "换个名字：<code>python3 merge_excel.py ~/excel-demo --output 总表2.xlsx</code>；确认要覆盖旧结果才加 <code>--force</code>。"
+},
+{
+"t": "旧格式 .xls 不支持",
+"s": "文件是十几年前的老格式。",
+"f": "用 Excel/WPS 打开该文件，另存为 .xlsx 格式后再汇总。"
+},
+{
+"t": "某文件因列名不一致被跳过",
+"s": "这不是报错，是脚本在保护你：硬拼会错位。",
+"f": "打开被跳过的文件，把列名改成和其他文件完全一致（顺序也要一致），再跑一次。"
+}
+],
+"checklist": [
+"【依赖安装】操作：<code>pip install pandas openpyxl</code> 后运行 <code>python3 -c \"import pandas, openpyxl\"</code>。预期：不报错，打印依赖就绪。",
+"【示例生成】操作：运行 <code>make_samples.py</code>。预期：<code>输入/</code> 下有 3 个 xlsx，共 6 行虚构数据。",
+"【正常汇总】操作：<code>python3 merge_excel.py ~/excel-demo</code>。预期：「合并文件数：3，数据总行数：6」，<code>输出/汇总结果.xlsx</code> 生成。",
+"【结果核对】操作：读出输出文件的行数、列名和「来源文件」列。预期：6 行，列为 商品/数量/金额/来源文件，每行能追溯来源。",
+"【输出保护】操作：不加参数再跑一次。预期：看到「输出文件已存在，拒绝覆盖」，旧文件内容没变；<code>--output</code> 换名或 <code>--force</code> 后才能写出。",
+"【边界保护】操作：第 6 步造 4 种问题文件再跑。预期：4 个各有明确跳过原因，正常文件照常合并，原始文件一个没被修改。",
+"【说出原理】能用自己的话说出：为什么列名不一致不能硬拼，脚本是怎么保护你的。"
+],
+"exercises": [
+"把示例改成你自己的场景：改 <code>make_samples.py</code> 里的列名和数据（比如换成「姓名/部门/工资」），重新生成并汇总。",
+"故意把某个文件的列顺序打乱（比如把「金额」挪到第一列），运行看脚本报什么，再把它修正。",
+"试试 <code>--output</code> 指定一个绝对路径（仍在演示目录内），观察脚本是否接受；再试一个演示目录外的路径，看拒绝提示。"
+]
 }
 ];
