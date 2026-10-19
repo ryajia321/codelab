@@ -51,11 +51,18 @@
   h += '<div class="progressbar"><i id="pbar"></i></div><div class="prog-txt" id="ptxt"></div>';
   h += '<div class="note" id="progWarn" style="display:none"><b>保存失败：</b>浏览器可能禁用了本地存储，刷新后学习进度会丢失。</div>';
   h += '<p style="color:var(--mut)">' + esc(t.summary) + '</p>';
+  var toc = [['sec-steps', '跟着做 (' + t.steps.length + ' 步)']];
+  if(t.errors && t.errors.length) toc.push(['sec-errors', '常见报错']);
+  if(t.checklist && t.checklist.length) toc.push(['sec-checklist', '验收清单']);
+  if(t.exercises && t.exercises.length) toc.push(['sec-exercises', '练习题']);
+  h += '<div class="toc">' + toc.map(function(x){
+    return '<a href="#' + x[0] + '">' + x[1] + '</a>';
+  }).join('') + '</div>';
   h += '<div class="sec"><h2>学习目标</h2><div class="sub">学完这一篇，你能做到</div><div class="step"><ul class="check">' +
        t.goals.map(function(g){ return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div></div>';
   h += '<div class="sec"><h2>环境准备</h2><div class="sub">开始前确认这几样</div><div class="step"><ul>' +
        t.env.map(function(g){ return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div></div>';
-  h += '<div class="sec"><h2>跟着做</h2><div class="sub">做完一步勾一步，进度自动保存</div><div id="steps">';
+  h += '<div class="sec" id="sec-steps"><h2>跟着做</h2><div class="sub">做完一步勾一步，进度自动保存</div><div id="steps">';
   t.steps.forEach(function(s, i){
     h += '<div class="step" data-i="' + i + '"><div class="step-head">' +
          '<input type="checkbox" class="step-check" data-i="' + i + '" aria-label="标记完成">' +
@@ -69,18 +76,18 @@
   });
   h += '</div></div>';
   if(t.errors && t.errors.length){
-    h += '<div class="sec"><h2>常见报错</h2><div class="sub">卡住了先来这里对号入座</div>';
+    h += '<div class="sec" id="sec-errors"><h2>常见报错</h2><div class="sub">卡住了先来这里对号入座</div>';
     t.errors.forEach(function(e){
       h += '<div class="err"><h4>' + esc(e.t) + '</h4><p>' + esc(e.s) + '</p><p class="fix">解决：' + sanitizeHTML(e.f) + '</p></div>';
     });
     h += '<p style="margin-top:8px"><a href="errors.html">更多通用报错 →</a></p></div>';
   }
   if(t.checklist && t.checklist.length){
-    h += '<div class="sec"><h2>验收清单</h2><div class="sub">全都做到才算真正学会</div><div class="step"><ul class="check">' +
+    h += '<div class="sec" id="sec-checklist"><h2>验收清单</h2><div class="sub">全都做到才算真正学会</div><div class="step"><ul class="check">' +
          t.checklist.map(function(g){ return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div></div>';
   }
   if(t.exercises && t.exercises.length){
-    h += '<div class="sec"><h2>练习题</h2><div class="sub">自己动手试试</div><div class="step"><ol>' +
+    h += '<div class="sec" id="sec-exercises"><h2>练习题</h2><div class="sub">自己动手试试</div><div class="step"><ol>' +
          t.exercises.map(function(g){ return '<li>' + sanitizeHTML(g) + '</li>'; }).join('') + '</ol></div></div>';
   }
   var TS = window.TUTORIALS || [];

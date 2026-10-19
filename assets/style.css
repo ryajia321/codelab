@@ -166,3 +166,14 @@ footer .wrap{display:flex;gap:18px;flex-wrap:wrap;align-items:center}
 .pn span{font-size:12px;color:#8b949e;display:block;margin-bottom:4px}
 .pn b{font-size:15px}
 .pn.next{text-align:right}
+
+/* ---- 教程目录 ---- */
+.toc{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px}
+.toc a{padding:6px 14px;border:1px solid #30363d;border-radius:16px;font-size:13px;
+  color:#c9d1d9;text-decoration:none;background:#161b22}
+.toc a:hover{border-color:#58a6ff;color:#fff}
+
+/* ---- 排序代码 ---- */
+.order-empty{color:#6e7681;font-size:13px;padding:10px;border:1px dashed #30363d;border-radius:10px;text-align:center}
+.game-opt.picked{border-color:#1f6feb;background:#0d1a2e}
+#orderCheck:disabled{opacity:.5;cursor:default}

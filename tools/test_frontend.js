@@ -80,13 +80,14 @@ vm.runInContext(fs.readFileSync(site + '/assets/game.js', 'utf8'), sbG);
 const Game = sbG.window.Game;
 eq('猜输出20题', Game.guessCount, 20);
 eq('找Bug10题', Game.bugCount, 10);
+eq('排序代码5题', Game.orderCount, 5);
 eq('连击2次+10分', Game.pointsFor(2), 10);
 eq('连击3次+15分', Game.pointsFor(3), 15);
 eq('连击5次+15分', Game.pointsFor(5), 15);
 {
   const gh = fs.readFileSync(site + '/game.html', 'utf8');
   eq('游戏页引入game.js', gh.includes('assets/game.js'), true);
-  eq('游戏页有双Tab', gh.includes('data-m="guess"') && gh.includes('data-m="bug"'), true);
+  eq('游戏页有三Tab', gh.includes('data-m="guess"') && gh.includes('data-m="bug"') && gh.includes('data-m="order"'), true);
   eq('游戏页导航自包含', gh.includes('href="game.html"'), true);
 }
 for(const pg of ['index.html','tutorials.html','tutorial.html','errors.html']){
@@ -94,6 +95,11 @@ for(const pg of ['index.html','tutorials.html','tutorial.html','errors.html']){
   eq(pg + '导航有小游戏', h.includes('game.html'), true);
 }
 eq('404导航有小游戏', fs.readFileSync(site + '/404.html', 'utf8').includes('/codelab/game.html'), true);
+{
+  const th = fs.readFileSync(site + '/tutorial.html', 'utf8');
+  eq('教程页有目录导航', th.includes('class="toc"') && th.includes('sec-steps'), true);
+  eq('教程页有上一篇下一篇', th.includes('prevnext'), true);
+}
 // ---- 持续优化 ----
 {
   const sm = fs.readFileSync(site + '/sitemap.xml', 'utf8');

@@ -79,7 +79,21 @@ var BUG = [
     why: 'for 下面的代码块必须缩进，不然 Python 不知道哪些算循环体。' }
 ];
 
-var MODES = { guess: { name: '猜输出', qs: GUESS }, bug: { name: '找Bug', qs: BUG } };
+var ORDER = [
+  { lines: ['for i in range(1, 4):', '    print(i)'],
+    hint: '循环 3 次，把 1、2、3 打印出来' },
+  { lines: ['def add(a, b):', '    return a + b', 'print(add(2, 3))'],
+    hint: '先定义函数，再调用它' },
+  { lines: ['total = 0', 'for n in [1, 2, 3]:', '    total += n', 'print(total)'],
+    hint: '累加 1+2+3，最后打印总数' },
+  { lines: ['score = 85', 'if score >= 60:', '    print("及格")', 'else:', '    print("不及格")'],
+    hint: '85 分，判断及格还是不及格' },
+  { lines: ['n = 3', 'while n > 0:', '    print(n)', '    n -= 1'],
+    hint: '倒数：3、2、1' }
+];
+
+var MODES = { guess: { name: '猜输出', qs: GUESS }, bug: { name: '找Bug', qs: BUG },
+              order: { name: '排序代码', qs: ORDER } };
 
 function shuffle(arr){
   var a = arr.slice();
@@ -101,6 +115,7 @@ function newGame(mode){
 }
 
 function render(){
+  if(G.mode === 'order'){ renderOrder(); return; }
   var q = G.qs[G.i], total = G.qs.length;
   var el = document.getElementById('gameBox');
   var h = '<div class="game-meta"><span>第 ' + (G.i+1) + ' / ' + total + ' 题</span>' +
@@ -117,6 +132,70 @@ function render(){
   el.querySelectorAll('.game-opt').forEach(function(b){
     b.addEventListener('click', function(){ answer(+b.getAttribute('data-k')); });
   });
+}
+
+/* ---- 排序代码模式 ---- */
+function renderOrder(){
+  var q = G.qs[G.i], total = G.qs.length;
+  G.pool = shuffle(q.lines.map(function(_, k){ return k; }));
+  G.picked = [];
+  var el = document.getElementById('gameBox');
+  el.innerHTML =
+    '<div class="game-meta"><span>第 ' + (G.i+1) + ' / ' + total + ' 题</span>' +
+    '<span>得分 <b id="gScore">' + G.score + '</b></span>' +
+    '<span>最高 ' + G.best + '</span></div>' +
+    '<div class="game-prog"><i style="width:' + Math.round(G.i/total*100) + '%"></i></div>' +
+    '<p class="game-q">把代码行按正确顺序排好 <span style="color:#8b949e;font-weight:400">（' + escHtml(q.hint) + '）</span></p>' +
+    '<div class="game-opts" id="orderPool"></div>' +
+    '<p class="game-q" style="margin-top:14px">你的答案：</p>' +
+    '<div class="game-opts" id="orderAns"><div class="order-empty">点上面的代码行，它们会按顺序排到这里</div></div>' +
+    '<div class="game-why" id="gameWhy"></div>' +
+    '<button class="btn" id="orderCheck" style="margin-top:12px">检查答案</button>';
+  drawOrder();
+  document.getElementById('orderCheck').addEventListener('click', checkOrder);
+}
+
+function drawOrder(){
+  var q = G.qs[G.i];
+  var pool = document.getElementById('orderPool');
+  pool.innerHTML = '';
+  G.pool.forEach(function(k){
+    var b = document.createElement('button');
+    b.className = 'game-opt'; b.textContent = q.lines[k] || '（空行）';
+    b.addEventListener('click', function(){ G.picked.push(k); G.pool.splice(G.pool.indexOf(k), 1); drawOrder(); });
+    pool.appendChild(b);
+  });
+  var ans = document.getElementById('orderAns');
+  ans.innerHTML = '';
+  if(!G.picked.length){
+    ans.innerHTML = '<div class="order-empty">点上面的代码行，它们会按顺序排到这里</div>';
+  }
+  G.picked.forEach(function(k){
+    var b = document.createElement('button');
+    b.className = 'game-opt picked'; b.textContent = q.lines[k] || '（空行）';
+    b.addEventListener('click', function(){ G.pool.push(k); G.picked.splice(G.picked.indexOf(k), 1); drawOrder(); });
+    ans.appendChild(b);
+  });
+}
+
+function checkOrder(){
+  var q = G.qs[G.i];
+  var correct = q.lines.map(function(_, k){ return k; });
+  var ok = G.picked.length === correct.length &&
+           G.picked.every(function(k, i){ return k === correct[i]; });
+  var whyEl = document.getElementById('gameWhy');
+  if(ok){
+    G.score += 20; G.correct++;
+    document.getElementById('gScore').textContent = G.score;
+    whyEl.innerHTML = '<div class="why-ok">✅ 顺序正确！+20 分</div>';
+  } else {
+    whyEl.innerHTML = '<div class="why-no">❌ 顺序不对</div><p>正确顺序：</p>' +
+      '<pre class="game-code">' + escHtml(q.lines.filter(function(l){ return l !== ''; }).join('\n')) + '</pre>';
+  }
+  whyEl.innerHTML += '<button class="btn" id="nextBtn" style="margin-top:10px">' +
+    (G.i + 1 < G.qs.length ? '下一题 →' : '看成绩 →') + '</button>';
+  document.getElementById('nextBtn').addEventListener('click', next);
+  document.getElementById('orderCheck').disabled = true;
 }
 
 function escHtml(s){
@@ -165,7 +244,10 @@ function finish(){
     '<div class="cta-row"><button class="btn" id="againBtn">再来一局</button>' +
     '<button class="btn ghost" id="switchBtn">换' + (G.mode === 'guess' ? '找Bug' : '猜输出') + '</button></div></div>';
   document.getElementById('againBtn').addEventListener('click', function(){ newGame(G.mode); });
-  document.getElementById('switchBtn').addEventListener('click', function(){ newGame(G.mode === 'guess' ? 'bug' : 'guess'); setTab(); });
+  var others = { guess: ['bug', '找Bug'], bug: ['order', '排序代码'], order: ['guess', '猜输出'] };
+  var sw = others[G.mode];
+  document.getElementById('switchBtn').textContent = '换' + sw[1];
+  document.getElementById('switchBtn').addEventListener('click', function(){ newGame(sw[0]); setTab(); });
   if(window.Achv){
     if(G.score >= 100) window.Achv.grant('game-master');
     if(perfect) window.Achv.grant('game-perfect');
@@ -186,6 +268,6 @@ function init(){
 }
 
 window.Game = { init: init, newGame: newGame, pointsFor: pointsFor,
-                guessCount: GUESS.length, bugCount: BUG.length,
+                guessCount: GUESS.length, bugCount: BUG.length, orderCount: ORDER.length,
                 getState: function(){ return G; } };
 })();
