@@ -38,14 +38,19 @@
 </div>
 </section>
 <section class="sec">
-<h2>学习路线</h2>
-<p class="sub">第一阶段先把第一篇做扎实，后续教程逐步上线</p>
-<div class="cards">
-<div class="card"><h3>1. 用 Python 自动整理文件</h3><p><span class="tag">已发布</span> <span class="tag gray">Python 入门</span></p><p>写一个带安全锁的文件整理脚本：预览 → 确认 → 执行。</p><a class="go" href="tutorial.html?id=python-organize-files">开始 →</a></div>
-<div class="card soon"><h3>2. Excel 数据汇总</h3><p><span class="tag gray">即将推出</span></p><p>用 Python 把散在多个表格里的数据汇总成一张总表。</p></div>
-<div class="card soon"><h3>3. 获取公开网页信息</h3><p><span class="tag gray">即将推出</span></p><p>合法合规地抓取公开网页的公开信息并保存。</p></div>
-<div class="card soon"><h3>4. 用公开 API 做查询网页</h3><p><span class="tag gray">即将推出</span></p><p>调用免费公开 API，做一个能查东西的小网页。</p></div>
-</div>
+<h2>今日份快乐</h2>
+<p class="sub">每天刷新一次，程序员的快乐就是这么简单</p>
+<div class="funbox" id="funbox"><p>加载中…</p></div>
+</section>
+<section class="sec">
+<h2>成就墙</h2>
+<p class="sub">跟着教程做，解锁这些成就（存在你本机浏览器里）</p>
+<div class="achv-wall" id="achvWall"></div>
+</section>
+<section class="sec">
+<h2>全部教程</h2>
+<p class="sub">6 篇已发布，从第一篇开始就行</p>
+<div class="cards" id="allList"></div>
 </section>
 </main>
 <footer><div class="wrap">
@@ -53,11 +58,30 @@
 </div></footer>
 <script src="assets/app.js"></script>
 <script src="data/tutorials.js"></script>
+<script src="assets/achievements.js"></script>
 <script>
 (function(){
   var box = document.getElementById('featured');
   var t = (window.TUTORIALS||[])[0];
   if(!t){ box.innerHTML = '<div class="card"><h3>教程加载中…</h3></div>'; return; }
+  // 趣味区
+  if(window.Achv){
+    var yj = window.Achv.dailyYiJi();
+    document.getElementById('funbox').innerHTML =
+      '<h3>📚 每日编程冷知识</h3><p>' + esc(window.Achv.dailyFact()) + '</p>' +
+      '<h3 style="margin-top:12px">📅 今日编程宜忌</h3>' +
+      '<p><span class="yi">宜：' + yj.yi.map(esc).join('、') + '</span></p>' +
+      '<p><span class="ji">忌：' + yj.ji.map(esc).join('、') + '</span></p>';
+    window.Achv.renderWall('achvWall');
+  }
+  // 全部教程
+  var all = document.getElementById('allList');
+  all.innerHTML = (window.TUTORIALS||[]).map(function(x){
+    return '<div class="card"><h3>' + esc(x.title) + '</h3>' +
+      '<p><span class="tag">' + esc(x.category) + '</span> <span class="tag gray">' + esc(x.level) + ' · 约' + x.minutes + '分钟</span></p>' +
+      '<p>' + esc(x.summary) + '</p>' +
+      '<a class="go" href="tutorial.html?id=' + x.id + '">开始学习 →</a></div>';
+  }).join('');
   box.innerHTML =
     '<div class="card"><h3>' + esc(t.title) + '</h3>' +
     '<p><span class="tag">' + esc(t.category) + '</span> <span class="tag gray">' + esc(t.level) + ' · 约' + t.minutes + '分钟</span></p>' +

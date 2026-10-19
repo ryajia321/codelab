@@ -38,6 +38,39 @@ eq('教程6首页==实测文件', TS[5].steps[0].code.text === fs.readFileSync(s
 eq('教程6样式==实测文件', TS[5].steps[1].code.text === fs.readFileSync(site + '/tutorials/web-publish-site/site/style.css', 'utf8'), true);
 eq('教程6检查脚本==实测文件', TS[5].steps[2].code.text === fs.readFileSync(site + '/tutorials/web-publish-site/check_site.py', 'utf8'), true);
 eq('教程6讲Pages开通', TS[5].steps[5].body.includes('Pages'), true);
+// ---- 成就系统 ----
+const sbA = { console, localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+  document: { createElement: () => ({ classList: { add(){}, remove(){} }, style: {}, remove(){} }), body: { appendChild(){} } },
+  window: {}, requestAnimationFrame(){} };
+vm.createContext(sbA);
+vm.runInContext(fs.readFileSync(site + '/assets/achievements.js', 'utf8'), sbA);
+const Achv = sbA.window.Achv;
+eq('成就8个', Achv.list.length, 8);
+{
+  const f1 = Achv.evaluate({'a':{done:7,total:7}}, {}, 14, []);
+  eq('完成1篇解锁2成就', JSON.stringify(f1), JSON.stringify(['first-step','tutorial-done']));
+  const f2 = Achv.evaluate({'python-organize-files':{done:7,total:7},'python-merge-excel':{done:7,total:7},'python-clean-excel':{done:7,total:7}}, {}, 3, [Date.now(),Date.now()-1e6,Date.now()-2e6]);
+  eq('三剑客+夜猫子+三杀', f2.includes('python-trio') && f2.includes('night-owl') && f2.includes('week-triple'), true);
+  const f3 = Achv.evaluate({'a':{done:0,total:7}}, {}, 14, []);
+  eq('零进度无解锁', f3.length, 0);
+  const f4 = Achv.evaluate({'a':{done:7,total:7}}, {'first-step':1,'tutorial-done':1}, 14, []);
+  eq('已解锁不重复', f4.length, 0);
+}
+eq('每日冷知识非空', typeof Achv.dailyFact() === 'string' && Achv.dailyFact().length > 10, true);
+{
+  const yj = Achv.dailyYiJi();
+  eq('宜忌各2个', yj.yi.length === 2 && yj.ji.length === 2, true);
+  eq('宜忌确定性', JSON.stringify(Achv.dailyYiJi()) === JSON.stringify(yj), true);
+}
+{
+  const idx = fs.readFileSync(site + '/index.html', 'utf8');
+  eq('首页引入成就脚本', idx.includes('assets/achievements.js'), true);
+  eq('首页无即将推出', !idx.includes('即将推出'), true);
+  eq('首页有成就墙', idx.includes('achvWall'), true);
+  const th = fs.readFileSync(site + '/tutorial.html', 'utf8');
+  eq('教程页引入成就脚本', th.includes('assets/achievements.js'), true);
+  eq('教程页调用check', th.includes('Achv.check()'), true);
+}
 // ---- app.js 沙箱 ----
 const mkEl = () => ({ style: {}, textContent: '', innerHTML: '', value: '',
   setAttribute() {}, focus() {}, select() {}, setSelectionRange() {}, remove() {},

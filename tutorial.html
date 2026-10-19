@@ -17,6 +17,7 @@
 </div></footer>
 <script src="assets/app.js"></script>
 <script src="data/tutorials.js"></script>
+<script src="assets/achievements.js"></script>
 <script>
 (function(){
   function codeBlock(c){
@@ -95,6 +96,10 @@
         cb.checked = false;
       }
       refresh();
+      if(window.Achv){
+        if(progCount(id, total) === total && total > 0) window.Achv.markDone(id);
+        window.Achv.check();
+      }
     });
   });
   refresh();

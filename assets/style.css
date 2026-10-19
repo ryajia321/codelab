@@ -105,3 +105,24 @@ footer .wrap{display:flex;gap:18px;flex-wrap:wrap;align-items:center}
   .codeblock pre{font-size:12.5px}
   .btn{padding:10px 16px;font-size:14px}
 }
+
+/* ---- 成就系统 ---- */
+.achv-toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,80px);z-index:9999;
+  display:flex;gap:12px;align-items:center;background:#161b22;border:1px solid #f0b429;
+  border-radius:14px;padding:14px 18px;max-width:88vw;box-shadow:0 8px 32px rgba(0,0,0,.5);
+  opacity:0;transition:all .35s ease;color:#e6edf3;font-size:14px}
+.achv-toast.show{transform:translate(-50%,0);opacity:1}
+.achv-toast .achv-emoji{font-size:32px}
+.achv-toast b{color:#f0b429}
+.achv-confetti{position:fixed;inset:0;z-index:9998;pointer-events:none}
+.achv-wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:14px}
+.achv-card{border:1px solid #30363d;border-radius:12px;padding:14px;background:#161b22;text-align:center}
+.achv-card .achv-emoji{font-size:30px;display:block;margin-bottom:6px}
+.achv-card b{display:block;font-size:14px;margin-bottom:4px}
+.achv-card span{font-size:12px;color:#8b949e}
+.achv-card.on{border-color:#f0b429;background:#1c1a12}
+.achv-card:not(.on){opacity:.65}
+.funbox{border:1px solid #30363d;border-radius:12px;padding:16px 18px;background:#161b22;margin-top:12px}
+.funbox h3{margin:0 0 8px;font-size:16px}
+.funbox p{margin:6px 0;font-size:14px;color:#c9d1d9}
+.funbox .yi{color:#3fb950}.funbox .ji{color:#f85149}
