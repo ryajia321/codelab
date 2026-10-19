@@ -3,8 +3,10 @@
 # 用法：bash tools/test_organize.sh
 set -u
 PY="$(cd "$(dirname "$0")/../tutorials/python-organize-files" && pwd)/organize.py"
-BASE=~/workspace/codelab-site/test-fixtures
-rm -rf "$BASE" && mkdir -p "$BASE"
+# 测试数据放在 mktemp 创建的独立临时目录（主目录内，被测脚本要求演示目录位于主目录内），
+# 脚本结束时只删除本次运行自己创建的这个目录，绝不碰固定目录。
+BASE=$(mktemp -d "$HOME/.codelab-organize-test-XXXXXX")
+trap 'rm -rf "$BASE"' EXIT
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); echo "PASS $1"; }
 bad()  { FAIL=$((FAIL+1)); echo "FAIL $1 -- $2"; }
