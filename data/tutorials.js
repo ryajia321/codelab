@@ -241,4 +241,202 @@ exercises: [
 "试试 <code>--output</code> 指定一个绝对路径（仍在演示目录内），观察脚本是否接受；再试一个演示目录外的路径，看拒绝提示。"
 ]
 }
+,
+{
+"id": "python-clean-excel",
+"title": "用 Python 自动清理 Excel 数据",
+"category": "Python 入门",
+"level": "零基础",
+"minutes": 60,
+"summary": "给一份脏兮兮的订单表做「体检+手术」：先看检查报告（三档模式），再一键修正格式、删除空白行，重复的行只标记不乱删，原始文件一个字节都不动。",
+"goals": [
+"用 openpyxl 精确读写 Excel 单元格（含真实日期格与文本的区别）",
+"理解「先判定后清洗」：重复判定看原始值+类型，不许先规范化再判",
+"掌握三档模式：--check 预览、默认执行、--deduplicate-exact 显式去重",
+"独立核对清理结果：行数、修正数、警告数对不对，原始文件动没动"
+],
+"env": [
+"电脑上装了 Python 3（第一篇教程的环境就行）",
+"会打开终端（Mac/Linux）或 PowerShell（Windows）",
+"支持的操作系统：macOS / Linux / Windows 10+（PowerShell）。Windows 用户：教程里凡是写 <code>python3</code> 的地方换成 <code>py</code>，<code>pip install</code> 换成 <code>py -m pip install</code>",
+"只支持 .xlsx 格式（现在 Excel/WPS 默认存的就是这个）",
+"不用安装 Office 或 WPS 也能跑"
+],
+"steps": [
+{
+"title": "确认依赖：openpyxl",
+"body": "<p>本篇读写 Excel 只用 <code>openpyxl</code>（第二篇装过就不用重装）。为什么不用 pandas？因为 pandas 读 Excel 时会「自作主张」改类型（比如把文本数字转成数字），而重复判定必须看 Excel 里<strong>原始的单元格类型</strong>——数字 10 和文本 \"10\" 看着一样，类型不同就不能算重复。</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 -c \"import openpyxl; print('依赖就绪')\""
+},
+"expected": "看到 <code>依赖就绪</code> 就是成功。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "py -c \"import openpyxl; print('依赖就绪')\""
+},
+"expected2": "如果报错 ModuleNotFoundError，运行 <code>py -m pip install openpyxl</code> 再试。"
+},
+{
+"title": "生成 12 行脏数据",
+"body": "<p>先造一份「脏订单表」练手：12 行虚构数据，埋了 5 类常见脏数据。注意第 2 行和第 5 行——它们逐格<strong>同值同类型</strong>（日期都是真正的日期格），是真重复；第 3 行和第 12 行订单号相同但内容不同，是疑似重复，脚本永远不会自动删它们。</p><p>先建演示目录，再运行生成程序：</p><div class=\"tip\"><b>注意：</b>生成程序默认<strong>不覆盖</strong>已存在的 <code>脏订单.xlsx</code>（防止盖掉你的真实文件）。想重新生成示例，先确认再加 <code>--force</code>。</div>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "mkdir -p ~/excel-clean-demo\npython3 make_dirty_samples.py ~/excel-clean-demo"
+},
+"expected": "终端显示「已生成 脏订单.xlsx（12 行数据，全部虚构）」，<code>~/excel-clean-demo/输入/</code> 下出现 <code>脏订单.xlsx</code>。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "New-Item -ItemType Directory -Force -Path \"$HOME\\excel-clean-demo\" | Out-Null\npy make_dirty_samples.py \"$HOME\\excel-clean-demo\""
+},
+"expected2": "同上。用资源管理器打开 <code>输入</code> 文件夹能看到 <code>脏订单.xlsx</code>。",
+"code3": {
+"lang": "python",
+"label": "make_dirty_samples.py",
+"text": "#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n\"\"\"\n生成 12 行脏数据示例（订单表），供《用 Python 清理 Excel 数据》教程演示用。\n全部虚构数据，不含任何真实信息。\n\n关键：用 openpyxl 直接写单元格，精确控制每个单元格的存储类型——\n  第 2 行下单日期写成【真实日期单元格】，第 3 行写成【文本】\"2026/10/02\"，\n  第 5 行与第 2 行逐格同值同类型（真重复），订单号 \"00012\" 写成文本（保前导零）。\n\n安全：默认不覆盖已存在的目标文件（防止盖掉用户的真实文件）；\n  目标本身是符号链接一律拒绝。只有加 --force 才允许覆盖。\n\n用法：python3 make_dirty_samples.py 演示目录 [--force]\n将在「演示目录/输入/」下生成 脏订单.xlsx（12 行数据 + 1 行表头）。\n\"\"\"\nimport argparse\nimport os\nimport sys\nfrom datetime import datetime\n\nfrom openpyxl import Workbook\nfrom openpyxl.styles import numbers\n\nHEADER = [\"订单号\", \"客户\", \"商品\", \"数量\", \"金额\", \"下单日期\"]\n\n# 每行：(订单号, 客户, 商品, 数量, 金额, 下单日期, 日期是否写成真实日期单元格)\n# 数量/金额中带引号的字符串表示【文本】类型，不带引号的数字表示【数字】类型\nROWS = [\n    (\"A001\", \"张三\", \"苹果\", 10, 300, datetime(2026, 10, 1), True),    # 行2：干净，真实日期格\n    (\"A002\", \"李四\", \"香蕉\", 20, 400, \"2026/10/02\", False),            # 行3：日期文本\n    (\"A003\", \"王五\", \"橙子\", 15, \"¥450\", \"2026-10-03\", False),          # 行4：金额文本\n    (\"A001\", \"张三\", \"苹果\", 10, 300, datetime(2026, 10, 1), True),    # 行5：真重复（逐格同值同类型）\n    (\"A004\", \"赵六\", \"梨\", \"3件\", 180, \"2026-10-04\", False),            # 行6：数量文本\n    (None, None, None, None, None, None, False),                       # 行7：完全空白行\n    (\"A005\", \"钱七 \", \"苹果\", 10, 300, \"2026-10-05\", False),            # 行8：客户首尾空格\n    (\"A006\", \"孙八\", \"香蕉\", 5, \"待定\", \"2026-10-06\", False),           # 行9：金额无法转换\n    (\"A007\", \"周九\", \"橙子\", 8, 240, \"10/07\", False),                  # 行10：日期缺少年份\n    (\"A008\", \"吴十\", \"梨\", 12, 360, \"2026-10-08\", False),              # 行11：干净\n    (\"A002\", \"李四\", \"香蕉\", 25, 500, \"2026-10-02\", False),            # 行12：疑似重复（同订单号，内容不同）\n    (\"00012\", \"郑十一\", \"葡萄\", 6, 210, \"2026-10-09\", False),          # 行13：订单号前导零（文本）\n]\n\n\ndef main():\n    ap = argparse.ArgumentParser(description=\"生成 12 行脏数据示例（默认不覆盖已存在文件）\")\n    ap.add_argument(\"demo_dir\", nargs=\"?\", default=os.path.expanduser(\"~/excel-clean-demo\"),\n                    help=\"演示目录路径（默认 ~/excel-clean-demo）\")\n    ap.add_argument(\"--force\", action=\"store_true\", help=\"允许覆盖已存在的 脏订单.xlsx\")\n    a = ap.parse_args()\n\n    demo = os.path.realpath(a.demo_dir)\n    home = os.path.realpath(os.path.expanduser(\"~\"))\n    if demo == home or not demo.startswith(home + os.sep):\n        print(\"拒绝：请指定主目录下的演示目录。\")\n        return 2\n    in_dir = os.path.join(demo, \"输入\")\n    os.makedirs(in_dir, exist_ok=True)\n\n    path = os.path.join(in_dir, \"脏订单.xlsx\")\n    # 目标本身是符号链接：无论指向何处，一律拒绝（防止通过链接覆盖用户真实文件）\n    if os.path.islink(path):\n        print(\"拒绝：目标本身是符号链接，不覆盖：%s\" % path)\n        return 2\n    # 默认不覆盖已存在文件：样例生成器绝不能悄悄盖掉用户的真实文件\n    if os.path.lexists(path) and not a.force:\n        print(\"拒绝：目标文件已存在，不覆盖：%s\" % path)\n        print(\"如需重新生成示例，请确认后加 --force。\")\n        return 1\n\n    wb = Workbook()\n    ws = wb.active\n    ws.title = \"订单\"\n    ws.append(HEADER)\n    for oid, cust, prod, qty, amt, dt, real_date in ROWS:\n        row = [oid, cust, prod, qty, amt, dt]\n        ws.append(row)\n        if real_date:\n            # 把下单日期格设为真实日期类型（openpyxl 按 datetime 自动识别，此处显式确认）\n            cell = ws.cell(row=ws.max_row, column=6)\n            cell.number_format = numbers.FORMAT_DATE_YYYYMMDD2\n    # 订单号列强制文本格式（保前导零 \"00012\"）\n    for r in range(2, ws.max_row + 1):\n        ws.cell(row=r, column=1).number_format = \"@\"\n    wb.save(path)\n    print(\"已生成 脏订单.xlsx（12 行数据，全部虚构）→ %s\" % path)\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+}
+},
+{
+"title": "写清理脚本 clean_excel.py",
+"body": "<p>把下面的代码保存为 <code>clean_excel.py</code>。先看懂它的安全策略（这也是本篇的核心）：</p><p>① <strong>三档模式</strong>：<code>--check</code> 只看报告不写任何文件；默认模式只修正格子、删空白行，<strong>不删任何含数据的行</strong>；<code>--deduplicate-exact</code> 才显式删除整行完全相同的重复。<br>② <strong>重复判定看原始快照</strong>：用 openpyxl 直接读单元格的值+类型，判定发生在清洗之前，禁止先规范化再判。类型不同不算重复（数字 10 和文本 \"10\"）。<br>③ <strong>原始文件只读</strong>：输出写到 <code>输出/</code> 目录，默认拒绝覆盖（原子创建），输出不能等于输入，<code>--force</code> 也拦不住；<code>--output</code> 只支持 <code>.xlsx</code>。<br>④ <strong>符号链接一律拒绝</strong>：输出目标本身是链接、<code>输入/</code>/<code>输出/</code> 目录本身是链接，都直接拒绝。<br>⑤ <strong>支持范围先讲清楚</strong>：含<strong>公式</strong>的表直接拒绝（无法可靠地保留公式，绝不静默丢弃）；带<strong>时间部分</strong>（时分秒）的日期直接拒绝（绝不静默截断）；金额/数量只按严格格式转换，拿不准的一律保留原文+警告。</p>",
+"code": {
+"lang": "python",
+"label": "clean_excel.py",
+"text": "#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n\"\"\"\nExcel 清理小助手 v1.0\n清理一份存在脏数据的 Excel：去重标记、删空白行、去首尾空格、统一日期/金额/数量格式。\n\n只用 openpyxl（不用 pandas 做类型推断——pandas 会改写原始单元格类型，\n例如把重复列名改成\"商品.1\"、把文本数字转成数字，见 v0.4 方案 §1）。\n\n三档模式：\n  --check               只在终端显示完整问题报告，不创建任何文件（严格零写入）\n  （默认）              修正单元格 + 删除完全空白行，不删除任何含数据的行\n  --deduplicate-exact   显式删除整行完全相同的重复（保留首条）\n\n支持范围（保守策略，先讲清楚再动手）：\n  1. 只支持 .xlsx（--output 其它扩展名直接拒绝）；\n  2. 不支持含公式的工作簿——检测到公式单元格直接拒绝，\n     因为输出阶段无法可靠保留公式及其依赖关系，绝不静默把公式变成数值；\n  3. 不支持带时间部分（时分秒非零）的日期时间——检测到直接拒绝，\n     绝不静默截断时间；\n  4. 金额/数量只按\"先验证完整格式、再转换\"的严格规则处理，\n     格式不明的一律保留原文 + 警告。\n\n安全策略：\n  1. 原始文件只读，运行前后 checksum 不变；\n  2. 重复判定基于 openpyxl 读取的【原始快照】（值+类型），发生在任何清洗之前，\n     禁止先规范化再判定；默认只标记不删除；\n  3. 演示目录/输入、演示目录/输出 本身是符号链接一律拒绝（无论指向何处）；\n     输出目标本身是符号链接一律拒绝；输出必须位于 演示目录/输出/ 内；\n     输出不得等于输入源文件（--force 也拒绝）；\n  4. 输出已存在默认拒绝覆盖（原子 os.link，无检查-创建竞态）；\n     --force 仅在路径安全检查通过后做原子 os.replace；\n  5. Excel 与报告分别原子发布，不谎称整体事务；报告失败 = 部分成功状态（如实报告）；\n  6. 失败时只删除自己创建的临时文件，绝不碰用户原有文件；\n  7. 演示目录必须位于用户主目录内（realpath 解析），拒绝根目录/主目录本身/符号链接入口。\n\n威胁边界（诚实说明，不夸大）：\n  realpath 解析 + islink 检查只能反映\"检查时刻\"的状态，不能消除检查与使用\n  之间的竞态（TOCTOU）——有演示目录写权限的攻击者理论上可在检查后替换\n  符号链接。本脚本面向用户自己的演示目录，上述检查用于防止误操作和常规\n  风险，不声称能防御有本地写权限的恶意攻击者。\n\n测试注入点（供自动化测试覆盖\"报告发布失败\"的部分成功路径，教程可忽略）：\n  环境变量 CLEAN_EXCEL_INJECT_REPORT_FAIL=1 时，在 Excel 发布成功后模拟报告发布失败。\n\n依赖：pip install openpyxl（只支持 .xlsx）\n用法：\n  python3 clean_excel.py 演示目录 --check\n  python3 clean_excel.py 演示目录\n  python3 clean_excel.py 演示目录 --deduplicate-exact\n  python3 clean_excel.py 演示目录 --output 干净订单.xlsx [--force]\n退出码：0 成功；1 运行失败（含部分成功）；2 用法或安全拒绝。\n\"\"\"\nimport argparse\nimport math\nimport os\nimport re\nimport sys\nimport tempfile\nfrom datetime import date, datetime, time\nfrom decimal import Decimal, InvalidOperation\n\nfrom openpyxl import Workbook, load_workbook\n\nREQUIRED_COLS = [\"订单号\", \"客户\", \"商品\", \"数量\", \"金额\", \"下单日期\"]\nINPUT_NAME = \"脏订单.xlsx\"\nOUTPUT_NAME = \"清理后.xlsx\"\nREPORT_NAME = \"清理报告.txt\"\n\nDATE_FMTS = (\"%Y-%m-%d\", \"%Y/%m/%d\", \"%Y.%m.%d\", \"%Y年%m月%d日\")\nQTY_UNITS = (\"件\", \"个\", \"只\", \"瓶\", \"箱\", \"台\", \"套\", \"包\")\nAMBIGUOUS_DOT = re.compile(r\"^\\d{1,3}\\.\\d{3}$\")  # 如 1.234：欧陆千分位歧义，不解释\nNONFINITE_RE = re.compile(r\"^[+-]?\\s*(nan|inf|infinity)\\s*$\", re.IGNORECASE)\n# 金额允许的完整格式（先整体验证，再转换）：\n#   可选 1 个货币符号开头（¥/￥/$），或 \"元\" 结尾；\n#   数字部分：纯数字（可选小数点）或规范千分位（每组恰 3 位）。\n# 不在其中的（如 1,2、美元450、-450）一律保留原文 + 警告。\nAMOUNT_RE = re.compile(r\"^(?:[¥￥$]\\s*)?(\\d+(?:\\.\\d+)?|\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?)(?:\\s*元)?$\")\n# 数量允许的完整格式：可选负号 + 整数 + 可选 1 个单位（单位必须在末尾）。\nQTY_RE = re.compile(r\"^(-?\\d+)\\s*(件|个|只|瓶|箱|台|套|包)?$\")\nQTY_DECIMAL_RE = re.compile(r\"^-?\\d+\\.\\d+$\")\n\n\ndef real_home():\n    return os.path.realpath(os.path.expanduser(\"~\"))\n\n\ndef check_demo(demo):\n    \"\"\"演示目录入口检查。返回 (realpath, None) 或 (None, 错误信息)。\n\n    威胁边界：realpath + islink 检查只反映检查时刻的状态，不能消除\n    检查与使用之间的竞态（TOCTOU）。面向用户自己的演示目录，\n    用于防止误操作和常规风险，不防御有本地写权限的恶意攻击者。\n    \"\"\"\n    if os.path.islink(demo):\n        return None, \"拒绝：入口不能是符号链接（当前：%s）\" % demo\n    demo = os.path.realpath(demo)\n    if not os.path.isdir(demo):\n        return None, \"目录不存在：%s\" % demo\n    home = real_home()\n    if demo == os.path.sep:\n        return None, \"拒绝：不能使用系统根目录\"\n    if demo == home:\n        return None, \"拒绝：不能直接使用用户主目录，请指定主目录下的演示目录\"\n    if not demo.startswith(home + os.sep):\n        return None, \"拒绝：只能使用用户主目录内的演示目录（当前：%s）\" % demo\n    # 演示目录/输入 与 演示目录/输出 本身不得是符号链接（无论指向何处）\n    for sub in (\"输入\", \"输出\"):\n        if os.path.islink(os.path.join(demo, sub)):\n            return None, \"拒绝：演示目录/%s 本身是符号链接（无论指向何处都不允许）\" % sub\n    return demo, None\n\n\n# ---------- 原始快照（openpyxl 两遍读取，不信任 pandas 类型推断） ----------\n\ndef scalar_key(val):\n    \"\"\"单个值的归一键。\n\n    诚实口径（只承诺实际做到的）：\n    - 用的是 openpyxl 返回的 Python 值（不是 Excel 底层存储字节）；\n    - datetime 保留完整时分秒（不同时间 ≠ 相同）；\n    - 数字 int/float 按 Decimal(str(v)).normalize() 比较，\n      即整数 10 与浮点 10.0 视为相同；文本 \"10\" 与数字 10 类型不同，不视为相同；\n    - 非有限数值（NaN/Infinity）单独标记，不参与相等比较。\n    \"\"\"\n    if val is None:\n        return (\"empty\",)\n    if isinstance(val, bool):\n        return (\"bool\", str(val))\n    if isinstance(val, datetime):\n        return (\"date\", val.isoformat())  # 保留时分秒\n    if isinstance(val, date):\n        return (\"date\", val.isoformat())\n    if isinstance(val, (int, float)):\n        if isinstance(val, float) and not math.isfinite(val):\n            return (\"nonfinite\",)\n        return (\"num\", str(Decimal(str(val)).normalize()))\n    return (\"text\", str(val))\n\n\ndef cell_key(val, dtype, formula):\n    \"\"\"单个单元格的原始快照键。val 来自 data_only=True，dtype/formula 来自 data_only=False。\n\n    dtype 是 openpyxl 报告的单元格类型（f=公式，e=错误值，s=文本，n=数字，d=日期）。\n    \"\"\"\n    if dtype == \"f\":\n        if val is None:\n            return (\"formula-missing\",)\n        return (\"formula\", str(formula), scalar_key(val))\n    if dtype == \"e\":\n        return (\"error\",)  # Excel 错误值（#DIV/0! 等）：不参与相等比较\n    return scalar_key(val)\n\n\ndef read_rows(path):\n    \"\"\"返回 (header, rows)。rows 每项：{'excel_row': n, 'cells': [(val, dtype, formula), ...], 'keys': tuple}。\"\"\"\n    wb_v = load_workbook(path, read_only=True, data_only=True)\n    wb_r = load_workbook(path, read_only=True, data_only=False)\n    try:\n        wv, wr = wb_v.active, wb_r.active\n        header = [c.value for c in next(wv.iter_rows(min_row=1, max_row=1))]\n        rows = []\n        for rn, (rv, rr) in enumerate(zip(wv.iter_rows(min_row=2), wr.iter_rows(min_row=2)), start=2):\n            cells, keys = [], []\n            for cv, cr in zip(rv, rr):\n                formula = cr.value if cr.data_type == \"f\" else None\n                cells.append((cv.value, cr.data_type, formula))\n                keys.append(cell_key(cv.value, cr.data_type, formula))\n            rows.append({\"excel_row\": rn, \"cells\": cells, \"keys\": tuple(keys)})\n    finally:\n        wb_v.close()\n        wb_r.close()\n    return header, rows\n\n\ndef is_blank(cells):\n    \"\"\"空白行：所有格为空或纯空白文本（独立于重复判定）。\n\n    公式单元格（dtype == 'f'）即使缓存值为空也视为有内容——\n    含公式的工作簿会被上游直接拒绝，此处是纵深防御，绝不把公式行当空白行删掉。\n    \"\"\"\n    for val, dtype, _ in cells:\n        if dtype == \"f\":\n            return False\n        if val is None:\n            continue\n        if isinstance(val, str) and val.strip() == \"\":\n            continue\n        return False\n    return True\n\n\ndef find_exact_groups(rows):\n    \"\"\"返回 (groups, skipped)。\n\n    groups: {keys: [excel_row,...]}，只含 >= 2 行的组（可安全判定的完全重复）。\n    skipped: [(excel_row, 原因)]——含公式无缓存 / Excel 错误值 / 非有限数值 的行，\n    不参与重复判定（宁可漏判，不可误判），调用方应给出明确警告。\n    \"\"\"\n    bucket, skipped = {}, []\n    for r in rows:\n        reason = None\n        for k in r[\"keys\"]:\n            if k[0] == \"formula-missing\":\n                reason = \"公式无缓存值，视为缺失\"\n                break\n            if k[0] == \"error\":\n                reason = \"含 Excel 错误值（如 #DIV/0!）\"\n                break\n            if k[0] == \"nonfinite\":\n                reason = \"含非有限数值（NaN/Infinity）\"\n                break\n        if reason:\n            skipped.append((r[\"excel_row\"], reason))\n            continue\n        bucket.setdefault(r[\"keys\"], []).append(r[\"excel_row\"])\n    groups = {k: v for k, v in bucket.items() if len(v) > 1}\n    return groups, skipped\n\n\ndef find_suspects(rows, oid_idx):\n    \"\"\"订单号相同但快照不同 → 疑似重复，始终保留+警告。返回 [(oid, [excel_row,...])]。\"\"\"\n    bucket = {}\n    for r in rows:\n        val = r[\"cells\"][oid_idx][0]\n        if val is None:\n            continue\n        bucket.setdefault(str(val), []).append(r)\n    out = []\n    for oid, rs in bucket.items():\n        if len(rs) > 1 and len({r[\"keys\"] for r in rs}) > 1:\n            out.append((oid, [r[\"excel_row\"] for r in rs]))\n    return out\n\n\n# ---------- 清洗（只作用于保留行；返回 (新值, 是否实际改写, 警告)） ----------\n\ndef clean_text(val):\n    if not isinstance(val, str):\n        return val, False, None\n    s = val.strip()\n    return s, (s != val), None\n\n\ndef clean_date(val):\n    # 注意：带时间部分（时分秒非零）的 datetime 已在上游被拒绝，\n    # 到这里的 datetime 一定是 00:00:00，只统一写法，不计修正。\n    if isinstance(val, datetime):\n        return val.date().isoformat(), False, None\n    if isinstance(val, date):\n        return val.isoformat(), False, None\n    s = str(val).strip()\n    for f in DATE_FMTS:\n        try:\n            iso = datetime.strptime(s, f).date().isoformat()\n            return iso, (iso != s), None  # 与原文相同不计修正\n        except ValueError:\n            pass\n    return val, False, \"日期无法解析（%s），保留原文\" % val\n\n\ndef clean_amount(val):\n    \"\"\"金额：先验证完整格式，再转换。格式不明的一律保留原文 + 警告。\n\n    允许：可选 1 个货币符号（¥/￥/$）开头或\"元\"结尾 + 纯数字/规范千分位（可带小数）。\n    拒绝：1,2（千分位不规范）、1.234（歧义）、NaN/Infinity、美元450、-450 等。\n    \"\"\"\n    if isinstance(val, bool):\n        return val, False, \"金额是布尔值，保留原文\"\n    if isinstance(val, (int, float)):\n        if isinstance(val, float) and not math.isfinite(val):\n            return val, False, \"金额是非有限数值，保留原文\"\n        return val, False, None\n    s = str(val).strip()\n    if not s:\n        return val, False, \"金额为空，保留原文\"\n    if NONFINITE_RE.match(s):\n        return val, False, \"金额是非有限数值（%s），保留原文\" % val\n    if AMBIGUOUS_DOT.match(s) or s.count(\".\") > 1:\n        return val, False, \"金额格式歧义（%s），不擅自解释，保留原文\" % val\n    m = AMOUNT_RE.match(s)\n    if not m:\n        return val, False, \"金额格式无法确认（%s），保留原文\" % val\n    try:\n        d = Decimal(m.group(1).replace(\",\", \"\"))\n    except InvalidOperation:\n        return val, False, \"金额无法转换为数字（%s），保留原文\" % val\n    if not d.is_finite():\n        return val, False, \"金额是非有限数值，保留原文\"\n    v = int(d) if d == d.to_integral_value() else float(d)\n    return v, True, None\n\n\ndef clean_qty(val):\n    \"\"\"数量：先验证完整格式，再转换。格式不明的一律保留原文 + 警告。\n\n    允许：整数（可选负号）+ 可选 1 个单位（件/个/只/瓶/箱/台/套/包，须在末尾）。\n    拒绝：1件2（单位不在末尾）、3.5（不是整数）、NaN/Infinity 等。\n    \"\"\"\n    if isinstance(val, bool):\n        return val, False, \"数量是布尔值，保留原文\"\n    if isinstance(val, (int, float)):\n        if isinstance(val, float) and not math.isfinite(val):\n            return val, False, \"数量是非有限数值，保留原文\"\n        return val, False, None\n    s = str(val).strip()\n    if not s:\n        return val, False, \"数量为空，保留原文\"\n    if NONFINITE_RE.match(s):\n        return val, False, \"数量是非有限数值（%s），保留原文\" % val\n    if QTY_DECIMAL_RE.match(s):\n        return val, False, \"数量不是整数（%s），保留原文\" % val\n    m = QTY_RE.match(s)\n    if not m:\n        return val, False, \"数量格式无法确认（%s），保留原文\" % val\n    return int(m.group(1)), True, None\n\n\ndef clean_row(cells, col_idx):\n    \"\"\"清洗一行保留行。返回 (new_values, fixed_count, warnings[(列名, 信息)])。\"\"\"\n    out, fixed, warns = [], 0, []\n    for i, (val, _, _) in enumerate(cells):\n        col = col_idx[\"names\"][i]\n        if col in (\"客户\", \"商品\"):\n            nv, ch, w = clean_text(val)\n        elif col == \"下单日期\":\n            nv, ch, w = clean_date(val)\n        elif col == \"金额\":\n            nv, ch, w = clean_amount(val)\n        elif col == \"数量\":\n            nv, ch, w = clean_qty(val)\n        else:  # 订单号等：保持原样，不碰身份字段\n            nv, ch, w = val, False, None\n        out.append(nv)\n        if ch:\n            fixed += 1\n        if w:\n            warns.append((col, w))\n    return out, fixed, warns\n\n\n# ---------- 路径安全 ----------\n\ndef resolve_in_dir(demo, sub, arg, must_exist=False):\n    \"\"\"把 arg 解析到 演示目录/sub/ 内。返回 (real_path, None) 或 (None, (msg, is_safety))。\n\n    威胁边界：realpath 解析只能反映检查时刻的状态，不能消除检查与使用\n    之间的竞态（TOCTOU）。配合 check_demo 对输入/输出目录本身的 islink\n    检查，用于防止误操作和常规风险，不防御有本地写权限的恶意攻击者。\n    \"\"\"\n    base = os.path.join(demo, sub)\n    real_base = os.path.realpath(base)\n    if real_base != demo and not real_base.startswith(demo + os.sep):\n        return None, (\"拒绝：%s 目录解析后超出演示目录范围\" % sub, True)\n    # 输出目录不得解析进输入目录（避免输出落进输入，下次被当成输入）\n    if sub == \"输出\":\n        real_in = os.path.realpath(os.path.join(demo, \"输入\"))\n        if real_base == real_in or real_base.startswith(real_in + os.sep):\n            return None, (\"拒绝：输出目录不能指向输入目录内\", True)\n    raw = arg if os.path.isabs(arg) else os.path.join(base, arg)\n    if os.path.islink(raw):\n        return None, (\"拒绝：目标本身是符号链接（%s），无论指向何处都不允许\" % arg, True)\n    final = os.path.realpath(raw)\n    if final != real_base and not final.startswith(real_base + os.sep):\n        return None, (\"拒绝：目标必须在演示目录/%s/ 内（当前：%s）\" % (sub, arg), True)\n    if os.path.isdir(final):\n        return None, (\"拒绝：输出目标是目录，无法写入文件：%s\" % arg, True)\n    if must_exist and not os.path.isfile(final):\n        return None, (\"输入文件不存在：%s\" % final, True)\n    return final, None\n\n\n# ---------- 原子发布 ----------\n\ndef publish_file(tmp, final, force):\n    \"\"\"原子发布单个文件。返回 (True, None) 或 (False, 原因)。\"\"\"\n    try:\n        if force:\n            os.replace(tmp, final)\n        else:\n            os.link(tmp, final)  # 目标已存在则抛 FileExistsError：无检查-创建竞态\n    except FileExistsError:\n        return False, \"目标已存在，拒绝覆盖：%s\" % final\n    except OSError as e:\n        return False, \"发布失败（%s）：%s\" % (final, e)\n    return True, None\n\n\n# ---------- 报告 ----------\n\ndef row_text(cells):\n    parts = []\n    for v, _, _ in cells:\n        if v is None:\n            parts.append(\"\")\n        elif isinstance(v, datetime):\n            parts.append(v.date().isoformat())\n        elif isinstance(v, date):\n            parts.append(v.isoformat())\n        else:\n            parts.append(str(v))\n    return \" | \".join(parts)\n\n\ndef build_report(ctx):\n    L = []\n    L.append(\"===== Excel 清理报告 =====\")\n    L.append(\"输入文件：%s\" % ctx[\"input\"])\n    L.append(\"模式：%s\" % ctx[\"mode\"])\n    L.append(\"原始数据行数：%d\" % ctx[\"n_raw\"])\n    L.append(\"自动修正单元格数：%d\" % ctx[\"n_fixed\"])\n    L.append(\"删除行数：%d\" % ctx[\"n_deleted\"])\n    L.append(\"警告数：%d\" % ctx[\"n_warn\"])\n    if ctx[\"groups\"]:\n        L.append(\"\")\n        L.append(\"--- 重复组（整行原始值+类型完全相同） ---\")\n        for gi, (key, rows) in enumerate(ctx[\"groups\"].items(), start=1):\n            L.append(\"重复组 G%d（共 %d 行）：\" % (gi, len(rows)))\n            for j, rn in enumerate(rows):\n                tag = \"保留（首条）\" if j == 0 else (\"已删除\" if ctx[\"dedup\"] else \"标记未删除\")\n                L.append(\"  - Excel第%d行：%s → %s\" % (rn, ctx[\"row_text\"][rn], tag))\n    if ctx[\"suspects\"]:\n        L.append(\"\")\n        L.append(\"--- 疑似重复（订单号相同、内容不同，始终保留） ---\")\n        for oid, rns in ctx[\"suspects\"]:\n            L.append(\"  - 订单号 %s：Excel第%s行 → 保留全部，请人工确认\" % (oid, \"、第\".join(map(str, rns))))\n    if ctx[\"warnings\"]:\n        L.append(\"\")\n        L.append(\"--- 警告明细 ---\")\n        for rn, col, msg in ctx[\"warnings\"]:\n            L.append(\"  - Excel第%d行【%s】：%s\" % (rn, col, msg))\n    if ctx[\"deleted\"]:\n        L.append(\"\")\n        L.append(\"--- 删除明细 ---\")\n        for rn, reason in ctx[\"deleted\"]:\n            L.append(\"  - Excel第%d行：%s\" % (rn, reason))\n    if not ctx[\"groups\"] and not ctx[\"suspects\"] and not ctx[\"warnings\"] and not ctx[\"deleted\"]:\n        L.append(\"未发现问题，数据干净。\")\n    return \"\\n\".join(L) + \"\\n\"\n\n\n# ---------- 主流程 ----------\n\ndef main():\n    ap = argparse.ArgumentParser(description=\"清理 Excel 脏数据（默认不删除业务行）\")\n    ap.add_argument(\"demo_dir\", help=\"演示目录路径（其下应有 输入/ 文件夹）\")\n    ap.add_argument(\"--input\", default=INPUT_NAME, help=\"输入文件名（默认 %s，位于演示目录/输入/ 下）\" % INPUT_NAME)\n    ap.add_argument(\"--output\", default=OUTPUT_NAME, help=\"输出文件名（默认 %s，位于演示目录/输出/ 下，仅支持 .xlsx）\" % OUTPUT_NAME)\n    ap.add_argument(\"--check\", action=\"store_true\", help=\"只显示问题报告，不创建任何文件\")\n    ap.add_argument(\"--force\", action=\"store_true\", help=\"允许覆盖已存在的输出文件（仅路径安全时）\")\n    ap.add_argument(\"--deduplicate-exact\", action=\"store_true\", help=\"显式删除整行完全相同的重复（保留首条）\")\n    a = ap.parse_args()\n\n    # --output 只支持 .xlsx（其它扩展名直接拒绝，避免报告名派生出误导性文件名）\n    if not a.output.lower().endswith(\".xlsx\"):\n        print(\"拒绝：--output 只支持 .xlsx 文件（当前：%s）。\" % a.output)\n        print(\"本工具只读写 .xlsx 格式（Excel/WPS 默认格式），请改用 .xlsx 后缀。\")\n        return 2\n\n    demo, err = check_demo(a.demo_dir)\n    if err:\n        print(err)\n        return 2\n\n    in_path, err = resolve_in_dir(demo, \"输入\", a.input, must_exist=True)\n    if err:\n        print(err[0])\n        return 2 if err[1] else 1\n    # 注：resolve_in_dir 已拒绝符号链接输入；realpath 解析后仍在 输入/ 内才放行\n\n    try:\n        header, rows = read_rows(in_path)\n    except Exception as e:\n        print(\"读取输入文件失败：%s\" % e)\n        return 1\n\n    missing = [c for c in REQUIRED_COLS if c not in header]\n    if missing:\n        print(\"缺少必要列：%s\\n期望列：%s\" % (\"、\".join(missing), \"、\".join(REQUIRED_COLS)))\n        return 1\n    if not rows:\n        print(\"表格没有数据行，未执行任何操作。\")\n        return 1\n    col_idx = {\"names\": header, \"map\": {name: header.index(name) for name in header}}\n    oid_idx = col_idx[\"map\"][\"订单号\"]\n\n    # ---- 支持范围检查（保守策略）：在任何判定/写入之前拒绝 ----\n    # 含公式的工作簿：输出阶段无法可靠保留公式及其依赖关系，绝不静默丢弃公式。\n    formula_rows = sorted({r[\"excel_row\"] for r in rows\n                           if any(dtype == \"f\" for _, dtype, _ in r[\"cells\"])})\n    if formula_rows:\n        print(\"拒绝：检测到公式单元格（Excel第%s行）。\" % \"、第\".join(map(str, formula_rows)))\n        print(\"当前版本无法可靠地保留公式及其计算关系，为避免静默丢弃公式，已拒绝自动清理。\")\n        print(\"原始文件未改动，也没有创建任何输出文件。\")\n        print(\"如需处理含公式的表，请先在 Excel/WPS 中把公式计算结果「粘贴为数值」后再试。\")\n        return 2\n    # 带时间部分的日期时间：绝不静默截断时分秒。\n    timed = []\n    for r in rows:\n        for i, (val, _, _) in enumerate(r[\"cells\"]):\n            if isinstance(val, time) or (\n                    isinstance(val, datetime)\n                    and (val.hour, val.minute, val.second, val.microsecond) != (0, 0, 0, 0)):\n                timed.append((r[\"excel_row\"], header[i]))\n    if timed:\n        shown = \"、\".join(\"Excel第%d行【%s】\" % t for t in timed[:5])\n        if len(timed) > 5:\n            shown += \"（等共 %d 处）\" % len(timed)\n        print(\"拒绝：检测到带时间部分的日期时间（%s）。\" % shown)\n        print(\"当前版本不会静默截断时间，已拒绝自动清理。原始文件未改动，也没有创建任何输出文件。\")\n        return 2\n\n    # 判定（清洗之前，基于原始快照）\n    groups, skipped = find_exact_groups(rows)\n    suspects = find_suspects(rows, oid_idx)\n\n    # 删除集合\n    to_delete = {}  # excel_row -> 原因\n    for r in rows:\n        if is_blank(r[\"cells\"]):\n            to_delete[r[\"excel_row\"]] = \"完全空白行，已删除\"\n    if a.deduplicate_exact:\n        for key, rns in groups.items():\n            for rn in rns[1:]:\n                to_delete[rn] = \"整行完全相同（显式去重），已删除\"\n\n    # 清洗保留行\n    out_rows, n_fixed, warnings, row_texts = [], 0, {}, {}\n    for r in rows:\n        rn = r[\"excel_row\"]\n        row_texts[rn] = row_text(r[\"cells\"])\n        if rn in to_delete:\n            continue\n        new_vals, fixed, warns = clean_row(r[\"cells\"], col_idx)\n        out_rows.append(new_vals)\n        n_fixed += fixed\n        for col, msg in warns:\n            warnings.setdefault(rn, []).append((col, msg))\n    for rn, reason in skipped:\n        warnings.setdefault(rn, []).append((\"整行\", \"%s，不参与重复判定\" % reason))\n\n    # 警告计数：重复组标记 + 疑似组 + 单元格警告（去重模式下已删除的组不计警告）\n    n_warn = 0\n    if not a.deduplicate_exact:\n        n_warn += len(groups)\n    n_warn += len(suspects)\n    for rn, lst in warnings.items():\n        n_warn += len(lst)\n\n    flat_warnings = []\n    for gi, (key, rns) in enumerate(groups.items(), start=1):\n        if not a.deduplicate_exact:\n            flat_warnings.append((rns[0], \"重复组\", \"G%d 共 %d 行完全相同，已标记未删除\" % (gi, len(rns))))\n    for oid, rns in suspects:\n        flat_warnings.append((rns[0], \"订单号\", \"疑似重复（订单号 %s），已保留全部\" % oid))\n    for rn, lst in warnings.items():\n        for col, msg in lst:\n            flat_warnings.append((rn, col, msg))\n    flat_warnings.sort()\n\n    deleted_list = sorted((rn, to_delete[rn]) for rn in to_delete)\n    ctx = {\n        \"input\": in_path,\n        \"mode\": \"--check 预览\" if a.check else (\"显式去重\" if a.deduplicate_exact else \"默认执行\"),\n        \"n_raw\": len(rows),\n        \"n_fixed\": n_fixed,\n        \"n_deleted\": len(to_delete),\n        \"n_warn\": n_warn,\n        \"groups\": groups,\n        \"suspects\": suspects,\n        \"warnings\": flat_warnings,\n        \"deleted\": deleted_list,\n        \"dedup\": a.deduplicate_exact,\n        \"row_text\": row_texts,\n    }\n    report = build_report(ctx)\n\n    if a.check:\n        # 严格零写入：到此为止未创建任何文件系统对象，直接打印\n        print(report)\n        return 0\n\n    # 写前预验证（两个目标，全部通过才发布任一；报告名随输出名派生）\n    xlsx_final, err = resolve_in_dir(demo, \"输出\", a.output)\n    if err:\n        print(err[0])\n        return 2 if err[1] else 1\n    report_name = os.path.splitext(os.path.basename(a.output))[0] + \"_报告.txt\"\n    report_final, err = resolve_in_dir(demo, \"输出\", report_name)\n    if err:\n        print(err[0])\n        return 2 if err[1] else 1\n    if not a.force:\n        if os.path.lexists(xlsx_final):\n            print(\"输出文件已存在，拒绝覆盖：%s\\n请用 --output 换名，或确认要覆盖时加 --force。\" % xlsx_final)\n            return 1\n        if os.path.lexists(report_final):\n            print(\"报告文件已存在，拒绝覆盖：%s\\n请确认要覆盖时加 --force。\" % report_final)\n            return 1\n\n    real_out_dir = os.path.realpath(os.path.join(demo, \"输出\"))\n    os.makedirs(real_out_dir, exist_ok=True)\n\n    temps = []\n    try:\n        # 准备临时文件（mkstemp：O_CREAT|O_EXCL + 随机名；xlsx 临时文件保留 .xlsx 后缀以便校验）\n        fd, xlsx_tmp = tempfile.mkstemp(dir=real_out_dir, prefix=\".clean-xlsx-\", suffix=\".xlsx\")\n        temps.append(xlsx_tmp)\n        fd2, report_tmp = tempfile.mkstemp(dir=real_out_dir, prefix=\".clean-report-\", suffix=\".txt\")\n        temps.append(report_tmp)\n\n        wb = Workbook()\n        ws = wb.active\n        ws.title = \"清理后\"\n        ws.append(header)\n        for vals in out_rows:\n            ws.append(vals)\n        wb.save(xlsx_tmp)\n        os.close(fd)\n        with os.fdopen(fd2, \"w\", encoding=\"utf-8\") as f:\n            f.write(report)\n\n        # 校验临时文件\n        try:\n            wv = load_workbook(xlsx_tmp, read_only=True)\n            wv.close()\n        except Exception as e:\n            print(\"生成的 Excel 校验失败，中止：%s\" % e)\n            return 1\n        if os.path.getsize(report_tmp) == 0:\n            print(\"生成的报告为空，中止。\")\n            return 1\n\n        # 发布 Excel\n        ok, msg = publish_file(xlsx_tmp, xlsx_final, a.force)\n        if not ok:\n            print(msg)\n            return 1\n        temps.remove(xlsx_tmp)\n        try:\n            os.unlink(xlsx_tmp)  # os.link 后需手动删；os.replace 改名后已不存在\n        except FileNotFoundError:\n            pass\n\n        # 测试注入点：模拟报告发布失败（覆盖部分成功路径）\n        if os.environ.get(\"CLEAN_EXCEL_INJECT_REPORT_FAIL\") == \"1\":\n            ok, msg = False, \"注入的报告发布失败（测试用 CLEAN_EXCEL_INJECT_REPORT_FAIL=1）\"\n        else:\n            ok, msg = publish_file(report_tmp, report_final, a.force)\n        if not ok:\n            print(\"===== 部分成功 =====\")\n            print(\"Excel 已生成（本次新输出）：%s\" % xlsx_final)\n            print(\"报告写入失败：%s\" % msg)\n            print(\"报告缺失不影响 Excel 数据；可用 --force 重跑一次补齐报告。\")\n            print(\"注意：这不是整体成功，已发布的 Excel 为本次有效输出，予以保留（不回滚）。\")\n            return 1\n        temps.remove(report_tmp)\n        try:\n            os.unlink(report_tmp)\n        except FileNotFoundError:\n            pass\n\n        print(report)\n        print(\"输出文件：%s\" % xlsx_final)\n        print(\"报告文件：%s\" % report_final)\n        return 0\n    finally:\n        for t in temps:  # 只删除本次创建的临时文件\n            try:\n                os.unlink(t)\n            except OSError:\n                pass\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+},
+"expected": "文件保存成功，待会儿直接运行。"
+},
+{
+"title": "先检查：--check 看体检报告",
+"body": "<p>动手前先看「体检报告」。<code>--check</code> 是严格零写入的：不创建输出目录、不写临时文件，只在终端显示报告。你可以验证——跑完后 <code>输出/</code> 目录根本不存在：</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 clean_excel.py ~/excel-clean-demo --check"
+},
+"expected": "报告显示：原始数据行数 12，自动修正 4 格，删除 1 行（空白行），警告 4 条；重复组 G1（第 2、5 行）标记未删除；订单号 A002 疑似重复，保留两条。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "py clean_excel.py \"$HOME\\excel-clean-demo\" --check"
+},
+"expected2": "同上。"
+},
+{
+"title": "执行清理并核对结果",
+"body": "<p>不加参数就是默认执行。跑完后做三件事核对：①报告里的四个数字（12 / 4 / 1 / 4）；②打开 <code>输出/清理后.xlsx</code> 抽查：<code>¥450</code> 变成了 450，<code>3件</code> 变成了 3，订单号 <code>00012</code> 的前导零还在，<code>待定</code> 和 <code>10/07</code> 原样保留；③确认原始文件没被动过（对比修改时间，或重新跑一遍 <code>--check</code> 结果一致）。</p><div class=\"tip\"><b>提示：</b>报告文件叫 <code>清理后_报告.txt</code>，名字跟着输出文件名走——你用 <code>--output</code> 换名，报告也会跟着换名。</div>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 clean_excel.py ~/excel-clean-demo"
+},
+"expected": "<code>输出/</code> 下出现 <code>清理后.xlsx</code>（11 行数据）和 <code>清理后_报告.txt</code>。再跑一次会看到「输出文件已存在，拒绝覆盖」——这是保护，不是报错。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "py clean_excel.py \"$HOME\\excel-clean-demo\""
+},
+"expected2": "同上。"
+},
+{
+"title": "理解去重：什么才算「完全相同」",
+"body": "<p>默认模式下，第 2 行和第 5 行只是被<strong>标记</strong>，没有被删除——因为删数据行的决定权在你手里。只有当你看过报告、确认它们真是重复时，才显式加 <code>--deduplicate-exact</code>。注意这次输出文件名换了（<code>去重版.xlsx</code>），并且因为报告文件已存在，需要加 <code>--force</code> 才能覆盖：</p><p>记住两条铁律：① <strong>类型不同不算重复</strong>——数字 10 和文本 \"10\" 看着一样，但原始类型不同，两行都保留；② <strong>订单号相同但内容不同，永远保留并警告</strong>，脚本不会替你删。</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 clean_excel.py ~/excel-clean-demo --deduplicate-exact --output 去重版.xlsx --force"
+},
+"expected": "报告显示删除 2 行（空白行 + 第 5 行），<code>去重版.xlsx</code> 剩 10 行数据。对比 <code>清理后.xlsx</code>（11 行），少的那行正是第 5 行。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "py clean_excel.py \"$HOME\\excel-clean-demo\" --deduplicate-exact --output 去重版.xlsx --force"
+},
+"expected2": "同上。"
+},
+{
+"title": "验收：说出每一步在保护什么",
+"body": "<p>最后做一遍完整流程，确认你理解了每个保护动作：<code>--check</code>（零写入预览）→ 默认执行（核对 4 个数字）→ 检查输出文件 → 确认原始文件未动。能说出下面三个问题的答案，这篇就算真正掌握了：</p>",
+"code": {
+"lang": "bash",
+"label": "终端（Mac/Linux）",
+"text": "python3 clean_excel.py ~/excel-clean-demo --check | head -8"
+},
+"expected": "能用自己的话说出：① 为什么默认模式不删重复行；② 数字 10 和文本 \"10\" 为什么不算重复；③ 输出已存在时脚本为什么拒绝覆盖。",
+"code2": {
+"lang": "powershell",
+"label": "PowerShell（Windows）",
+"text": "py clean_excel.py \"$HOME\\excel-clean-demo\" --check"
+},
+"expected2": "同上。"
+}
+],
+"errors": [
+{
+"t": "ModuleNotFoundError: No module named 'openpyxl'",
+"s": "依赖没装上，或装到了另一个 Python 里。",
+"f": "运行 <code>pip install openpyxl</code>（Windows 用 <code>py -m pip install openpyxl</code>），再跑 <code>python3 -c \"import openpyxl\"</code> 验证。"
+},
+{
+"t": "输入文件不存在",
+"s": "演示目录下没有 <code>输入/脏订单.xlsx</code>。",
+"f": "先跑第 2 步的 <code>make_dirty_samples.py</code> 生成示例；如果是自己的表，用 <code>--input 你的文件名.xlsx</code> 指定（文件要放在演示目录的 <code>输入/</code> 下）。"
+},
+{
+"t": "表格没有数据行",
+"s": "Excel 里只有表头，没有数据。",
+"f": "检查文件是不是选错了，或者表头行是不是空行开头。"
+},
+{
+"t": "缺少必要列",
+"s": "表的列名和脚本要的不一样。",
+"f": "脚本要求 6 列：订单号、客户、商品、数量、金额、下单日期。把列名改成一致再跑。"
+},
+{
+"t": "输出文件已存在，拒绝覆盖",
+"s": "这不是报错，是脚本在保护你：防止新结果盖掉旧结果。",
+"f": "确认旧输出不要了就加 <code>--force</code>；想保留旧的就用 <code>--output 新名字.xlsx</code> 换名。"
+},
+{
+"t": "检测到公式单元格",
+"s": "表里有公式。脚本无法可靠地保留公式，所以直接拒绝，不会静默把公式变成数值。",
+"f": "在 Excel/WPS 里把公式计算结果「粘贴为数值」后，再跑脚本。"
+},
+{
+"t": "检测到带时间部分的日期时间",
+"s": "某格日期带时分秒。脚本不会静默截断时间，所以直接拒绝。",
+"f": "确认时间部分不需要，改成纯日期后再跑；时间重要的话，这个版本处理不了。"
+},
+{
+"t": "--output 只支持 .xlsx 文件",
+"s": "输出文件名用了别的扩展名（如 .csv）。",
+"f": "改成 <code>.xlsx</code> 后缀再跑。"
+},
+{
+"t": "（生成器）目标文件已存在，不覆盖",
+"s": "生成程序默认不覆盖已存在的 <code>脏订单.xlsx</code>，防止盖掉你的真实文件。",
+"f": "确认要重新生成示例，就加 <code>--force</code>。"
+}
+],
+"checklist": [
+"【依赖】操作：<code>python3 -c \"import openpyxl\"</code>。预期：不报错，打印依赖就绪。",
+"【生成示例】操作：运行 <code>make_dirty_samples.py ~/excel-clean-demo</code>。预期：<code>输入/脏订单.xlsx</code> 生成，12 行虚构数据。",
+"【检查模式】操作：<code>python3 clean_excel.py ~/excel-clean-demo --check</code>。预期：报告显示 12 / 4 / 1 / 4；<code>输出/</code> 目录不存在（零写入）。",
+"【默认执行】操作：<code>python3 clean_excel.py ~/excel-clean-demo</code>。预期：<code>输出/清理后.xlsx</code> 11 行数据，<code>清理后_报告.txt</code> 生成；再跑一次被拒绝覆盖。",
+"【结果核对】操作：打开输出文件抽查。预期：<code>¥450</code>→450、<code>3件</code>→3、前导零 <code>00012</code> 保留、<code>待定</code>/<code>10/07</code> 原样保留并有警告。",
+"【显式去重】操作：<code>--deduplicate-exact --output 去重版.xlsx --force</code>。预期：删除 2 行剩 10 行；A002 的两行始终保留。",
+"【支持范围】操作：在表里加一个公式（如 <code>=B2*1</code>）再跑。预期：脚本拒绝并提示「检测到公式单元格」，原始文件未动、没有新输出。",
+"【生成器保护】操作：不删除 <code>输入/脏订单.xlsx</code> 直接重跑 <code>make_dirty_samples.py</code>。预期：提示「目标文件已存在，不覆盖」，文件字节不变。",
+"【说出原理】能用自己的话说出：为什么重复判定要看原始类型、默认模式为什么不删行、数字 10 和文本 \"10\" 为什么不算重复。"
+],
+"exercises": [
+"把 <code>make_dirty_samples.py</code> 里第 8 行的客户改成你自己的名字重跑，观察 strip 逻辑对没有空格的名字做了什么（修正数应该不变）。",
+"故意在 <code>输入/</code> 里放一个缺少「金额」列的表，运行看脚本报什么，再把列补上。",
+"试试 <code>--output x.csv</code>（扩展名不对）和 <code>--output /tmp/x.xlsx</code>（目录外），观察两种拒绝提示有什么不同；再试 <code>--check</code>，确认零写入。"
+]
+}
 ];
