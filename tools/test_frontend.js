@@ -21,6 +21,23 @@ eq('教程3说明时间拒绝', TS[2].steps[2].body.includes('绝不静默截断
 eq('教程3有公式报错条目', TS[2].errors.some(e => e.t.includes('公式')), true);
 eq('教程3生成器不覆盖说明', TS[2].steps[1].body.includes('不覆盖'), true);
 eq('教程3验收清单9项', TS[2].checklist.length, 9);
+eq('教程4id', TS[3].id, 'python-fetch-web');
+eq('教程4有7步', TS[3].steps.length, 7);
+eq('教程4步骤1有Windows代码块', !!TS[3].steps[0].code2, true);
+eq('教程4脚本==实测文件', TS[3].steps[1].code.text === fs.readFileSync(site + '/tutorials/python-fetch-web/fetch_page.py', 'utf8'), true);
+eq('教程4讲403停手', TS[3].steps[1].body.includes('403'), true);
+eq('教程4有超时报错条目', TS[3].errors.some(e => e.t.includes('超时')), true);
+eq('教程5id', TS[4].id, 'web-github-query');
+eq('教程5有7步', TS[4].steps.length, 7);
+eq('教程5页面==实测文件', TS[4].steps[0].code.text === fs.readFileSync(site + '/tutorials/web-github-query/query.html', 'utf8'), true);
+eq('教程5含API地址', TS[4].steps[0].code.text.includes('https://api.github.com/repos/'), true);
+eq('教程5有频率限制报错条目', TS[4].errors.some(e => e.t.includes('频率限制')), true);
+eq('教程6id', TS[5].id, 'web-publish-site');
+eq('教程6有7步', TS[5].steps.length, 7);
+eq('教程6首页==实测文件', TS[5].steps[0].code.text === fs.readFileSync(site + '/tutorials/web-publish-site/site/index.html', 'utf8'), true);
+eq('教程6样式==实测文件', TS[5].steps[1].code.text === fs.readFileSync(site + '/tutorials/web-publish-site/site/style.css', 'utf8'), true);
+eq('教程6检查脚本==实测文件', TS[5].steps[2].code.text === fs.readFileSync(site + '/tutorials/web-publish-site/check_site.py', 'utf8'), true);
+eq('教程6讲Pages开通', TS[5].steps[5].body.includes('Pages'), true);
 // ---- app.js 沙箱 ----
 const mkEl = () => ({ style: {}, textContent: '', innerHTML: '', value: '',
   setAttribute() {}, focus() {}, select() {}, setSelectionRange() {}, remove() {},

@@ -13,6 +13,13 @@ PLACEHOLDERS = {
     '__ORGANIZE_PY__': os.path.join('tutorials', 'python-organize-files', 'organize.py'),
     '__MAKE_SAMPLES_PY__': os.path.join('tutorials', 'python-merge-excel', 'make_samples.py'),
     '__MERGE_EXCEL_PY__': os.path.join('tutorials', 'python-merge-excel', 'merge_excel.py'),
+    '__MAKE_DIRTY_PY__': os.path.join('tutorials', 'python-clean-excel', 'make_dirty_samples.py'),
+    '__CLEAN_EXCEL_PY__': os.path.join('tutorials', 'python-clean-excel', 'clean_excel.py'),
+    '__FETCH_PAGE_PY__': os.path.join('tutorials', 'python-fetch-web', 'fetch_page.py'),
+    '__QUERY_HTML__': os.path.join('tutorials', 'web-github-query', 'query.html'),
+    '__CHECK_SITE_PY__': os.path.join('tutorials', 'web-publish-site', 'check_site.py'),
+    '__SITE_INDEX_HTML__': os.path.join('tutorials', 'web-publish-site', 'site', 'index.html'),
+    '__SITE_STYLE_CSS__': os.path.join('tutorials', 'web-publish-site', 'site', 'style.css'),
 }
 
 with open(os.path.join(ROOT, 'data', 'tutorials.template.js'), encoding='utf-8') as f:
