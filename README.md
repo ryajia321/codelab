@@ -47,3 +47,16 @@ python3 -m http.server 8000
 ## 学习进度存储
 
 `localStorage`，key 为 `codelab_prog_<教程id>`，值为 `{步骤序号: true}`。只存本机，不上传。
+
+## 工具脚本（tools/）
+
+```bash
+python3 tools/build.py                  # 从模板 + organize.py 生成 data/tutorials.js
+python3 tools/check_code_consistent.py  # 检查生成文件是否过期（CI/提交前跑）
+node tools/test_frontend.js            # 前端测试：数据/消毒器/进度/复制降级
+bash tools/test_organize.sh            # organize.py 边界测试（16 项，专用临时目录）
+```
+
+注意：`data/tutorials.js` 是生成文件，不要手改；改教程文字编辑
+`data/tutorials.template.js`，改脚本编辑 `tutorials/python-organize-files/organize.py`，
+然后跑 `python3 tools/build.py` 重新生成。
