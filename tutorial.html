@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>教程 - CodeLab 码上实践</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="wrap">
+<a class="logo" href="index.html">CodeLab <b>码上实践</b></a>
+<nav class="nav"><a href="index.html">首页</a><a href="tutorials.html">教程</a><a href="errors.html">报错排查</a></nav>
+</div></header>
+<main class="wrap" id="content"></main>
+<footer><div class="wrap">
+<span>CodeLab 码上实践</span><a href="tutorials.html">全部教程</a><a href="errors.html">报错排查</a>
+</div></footer>
+<script src="assets/app.js"></script>
+<script src="data/tutorials.js"></script>
+<script>
+(function(){
+  function codeBlock(c){
+    return '<div class="codeblock ' + esc(c.lang) + '"><div class="chead"><span>' +
+      esc(c.label || c.lang) + '</span>' +
+      '<button class="copybtn" onclick="copyCode(this)">复制</button></div>' +
+      '<pre><code>' + esc(c.text) + '</code></pre></div>';
+  }
+  var id = new URLSearchParams(location.search).get('id');
+  var t = (window.TUTORIALS || []).filter(function(x){ return x.id === id; })[0];
+  var el = document.getElementById('content');
+  if(!t){
+    document.title = '没找到教程 - CodeLab 码上实践';
+    el.innerHTML = '<div class="nf"><h1>404</h1><p>没找到这篇教程，可能链接错了。</p><a class="btn" href="tutorials.html">回教程列表</a></div>';
+    return;
+  }
+  document.title = t.title + ' - CodeLab 码上实践';
+  var h = '';
+  h += '<div class="crumb"><a href="index.html">首页</a> / <a href="tutorials.html">教程</a> / ' + esc(t.title) + '</div>';
+  h += '<h1 class="t-title">' + esc(t.title) + '</h1>';
+  h += '<div class="t-meta"><span class="tag">' + esc(t.category) + '</span>' +
+       '<span class="tag gray">' + esc(t.level) + '</span>' +
+       '<span class="tag gray">约 ' + t.minutes + ' 分钟</span></div>';
+  h += '<div class="progressbar"><i id="pbar"></i></div><div class="prog-txt" id="ptxt"></div>';
+  h += '<p style="color:var(--mut)">' + esc(t.summary) + '</p>';
+  h += '<div class="sec"><h2>学习目标</h2><div class="sub">学完这一篇，你能做到</div><div class="step"><ul class="check">' +
+       t.goals.map(function(g){ return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div></div>';
+  h += '<div class="sec"><h2>环境准备</h2><div class="sub">开始前确认这几样</div><div class="step"><ul>' +
+       t.env.map(function(g){ return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div></div>';
+  h += '<div class="sec"><h2>跟着做</h2><div class="sub">做完一步勾一步，进度自动保存</div><div id="steps">';
+  t.steps.forEach(function(s, i){
+    h += '<div class="step" data-i="' + i + '"><div class="step-head">' +
+         '<input type="checkbox" class="step-check" data-i="' + i + '" aria-label="标记完成">' +
+         '<h3>第 ' + (i+1) + ' 步：' + esc(s.title) + '</h3></div>' +
+         '<div>' + s.body + '</div>';
+    if(s.code) h += codeBlock(s.code);
+    if(s.expected) h += '<div class="tip"><b>预期结果：</b>' + s.expected + '</div>';
+    h += '</div>';
+  });
+  h += '</div></div>';
+  if(t.errors && t.errors.length){
+    h += '<div class="sec"><h2>常见报错</h2><div class="sub">卡住了先来这里对号入座</div>';
+    t.errors.forEach(function(e){
+      h += '<div class="err"><h4>' + esc(e.t) + '</h4><p>' + esc(e.s) + '</p><p class="fix">解决：' + e.f + '</p></div>';
+    });
+    h += '<p style="margin-top:8px"><a href="errors.html">更多通用报错 →</a></p></div>';
+  }
+  if(t.checklist && t.checklist.length){
+    h += '<div class="sec"><h2>验收清单</h2><div class="sub">全都做到才算真正学会</div><div class="step"><ul class="check">' +
+         t.checklist.map(function(g){ return '<li>' + esc(g) + '</li>'; }).join('') + '</ul></div></div>';
+  }
+  if(t.exercises && t.exercises.length){
+    h += '<div class="sec"><h2>练习题</h2><div class="sub">自己动手试试</div><div class="step"><ol>' +
+         t.exercises.map(function(g){ return '<li>' + g + '</li>'; }).join('') + '</ol></div></div>';
+  }
+  el.innerHTML = h;
+  var total = t.steps.length;
+  function refresh(){
+    var n = progCount(id, total);
+    document.getElementById('pbar').style.width = (total ? Math.round(n/total*100) : 0) + '%';
+    document.getElementById('ptxt').textContent = '学习进度：' + n + ' / ' + total + ' 步' + (n === total ? ' —— 全部完成，很棒！' : '');
+    document.querySelectorAll('.step-check').forEach(function(cb){
+      var i = +cb.getAttribute('data-i');
+      cb.checked = !!progGet(id)[i];
+      cb.closest('.step').classList.toggle('done', cb.checked);
+    });
+  }
+  document.querySelectorAll('.step-check').forEach(function(cb){
+    cb.addEventListener('change', function(){
+      progSet(id, +cb.getAttribute('data-i'), cb.checked);
+      refresh();
+    });
+  });
+  refresh();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>教程列表 - CodeLab 码上实践</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="topbar"><div class="wrap">
+<a class="logo" href="index.html">CodeLab <b>码上实践</b></a>
+<nav class="nav"><a href="index.html">首页</a><a href="tutorials.html">教程</a><a href="errors.html">报错排查</a></nav>
+</div></header>
+<main class="wrap">
+<div class="crumb"><a href="index.html">首页</a> / 教程</div>
+<h1 class="t-title">全部教程</h1>
+<div class="toolbar">
+<input id="q" type="search" placeholder="搜索教程标题或简介…" autocomplete="off">
+</div>
+<div class="pills" id="pills"></div>
+<div class="cards" id="list" style="margin-top:14px"></div>
+<div class="empty" id="empty">没找到匹配的教程，换个关键词试试。</div>
+<section class="sec">
+<h2>路线图</h2>
+<p class="sub">这些是第二阶段计划，内容还没写完，先不点</p>
+<div class="cards">
+<div class="card soon"><h3>Excel 数据汇总</h3><p><span class="tag gray">即将推出</span></p><p>把多个表格的数据汇总成一张总表。</p></div>
+<div class="card soon"><h3>获取公开网页信息</h3><p><span class="tag gray">即将推出</span></p><p>合法合规地获取公开网页的公开信息。</p></div>
+<div class="card soon"><h3>用公开 API 做查询网页</h3><p><span class="tag gray">即将推出</span></p><p>调用免费公开 API 做查询小网页。</p></div>
+<div class="card soon"><h3>发布一个小型网站</h3><p><span class="tag gray">即将推出</span></p><p>把你做的东西发到网上，别人能打开。</p></div>
+</div>
+</section>
+</main>
+<footer><div class="wrap">
+<span>CodeLab 码上实践</span><a href="index.html">首页</a><a href="errors.html">报错排查</a>
+</div></footer>
+<script src="assets/app.js"></script>
+<script src="data/tutorials.js"></script>
+<script>
+(function(){
+  var TS = window.TUTORIALS || [];
+  var cats = ['全部'];
+  TS.forEach(function(t){ if(cats.indexOf(t.category) < 0) cats.push(t.category); });
+  var pills = document.getElementById('pills'), cur = '全部';
+  function drawPills(){
+    pills.innerHTML = cats.map(function(c){
+      return '<button class="pill' + (c === cur ? ' on' : '') + '" data-c="' + esc(c) + '">' + esc(c) + '</button>';
+    }).join('');
+    pills.querySelectorAll('.pill').forEach(function(b){
+      b.addEventListener('click', function(){ cur = b.getAttribute('data-c'); drawPills(); drawList(); });
+    });
+  }
+  function card(t){
+    var done = progCount(t.id, (t.steps||[]).length), total = (t.steps||[]).length;
+    var pct = total ? Math.round(done/total*100) : 0;
+    return '<div class="card"><h3>' + esc(t.title) + '</h3>' +
+      '<p><span class="tag">' + esc(t.category) + '</span> <span class="tag gray">' + esc(t.level) + ' · 约' + t.minutes + '分钟</span>' +
+      (done ? ' <span class="tag gray">已完成 ' + pct + '%</span>' : '') + '</p>' +
+      '<p>' + esc(t.summary) + '</p>' +
+      '<a class="go" href="tutorial.html?id=' + t.id + '">' + (done ? '继续学习 →' : '开始学习 →') + '</a></div>';
+  }
+  function drawList(){
+    var q = document.getElementById('q').value.trim().toLowerCase();
+    var list = TS.filter(function(t){
+      var okC = (cur === '全部' || t.category === cur);
+      var okQ = (!q || (t.title + ' ' + t.summary).toLowerCase().indexOf(q) >= 0);
+      return okC && okQ;
+    });
+    document.getElementById('list').innerHTML = list.map(card).join('');
+    document.getElementById('empty').style.display = list.length ? 'none' : 'block';
+  }
+  document.getElementById('q').addEventListener('input', drawList);
+  drawPills(); drawList();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+/* CodeLab 码上实践 — 深色开发者风，移动端优先 */
+:root{
+  --bg:#0d1117; --bg2:#161b22; --bg3:#1c2330;
+  --line:#2a3342; --txt:#e6edf3; --mut:#8b949e;
+  --acc:#58a6ff; --acc2:#3fb950; --warn:#d29922; --bad:#f85149;
+  --code-bg:#0a0e14; --radius:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;line-height:1.75;font-size:16px}
+a{color:var(--acc);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:860px;margin:0 auto;padding:0 16px}
+/* 顶栏 */
+.topbar{position:sticky;top:0;z-index:50;background:rgba(13,17,23,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.topbar .wrap{display:flex;align-items:center;height:56px;gap:4px}
+.logo{font-weight:700;font-size:17px;color:var(--txt);margin-right:auto;white-space:nowrap}
+.logo b{color:var(--acc2)}
+.nav{display:flex;gap:2px}
+.nav a{color:var(--mut);font-size:14px;padding:8px 10px;border-radius:8px;white-space:nowrap}
+.nav a:hover{color:var(--txt);text-decoration:none;background:var(--bg3)}
+.nav a.on{color:var(--acc)}
+/* Hero */
+.hero{padding:44px 0 30px}
+.hero .kicker{display:inline-block;font-size:12px;color:var(--acc2);border:1px solid var(--acc2);border-radius:20px;padding:3px 12px;margin-bottom:14px}
+.hero h1{font-size:30px;line-height:1.4;margin-bottom:12px}
+.hero p{color:var(--mut);font-size:16px;max-width:640px}
+.cta-row{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap}
+.btn{display:inline-block;background:var(--acc2);color:#04120a;font-weight:700;font-size:15px;padding:11px 22px;border-radius:var(--radius);border:0;cursor:pointer}
+.btn:hover{text-decoration:none;filter:brightness(1.08)}
+.btn.ghost{background:transparent;color:var(--acc);border:1px solid var(--line)}
+/* 卡片 */
+.sec{padding:26px 0}
+.sec h2{font-size:20px;margin-bottom:4px}
+.sec .sub{color:var(--mut);font-size:14px;margin-bottom:16px}
+.cards{display:grid;grid-template-columns:1fr;gap:14px}
+@media(min-width:640px){.cards{grid-template-columns:1fr 1fr}}
+.card{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:18px;display:flex;flex-direction:column;gap:8px}
+.card h3{font-size:17px}
+.card p{color:var(--mut);font-size:14px;flex:1}
+.meta{display:flex;gap:8px;flex-wrap:wrap;font-size:12px}
+.tag{background:var(--bg3);color:var(--acc);border-radius:6px;padding:2px 9px}
+.tag.gray{color:var(--mut)}
+.card .go{font-size:14px;font-weight:700}
+.card.soon{opacity:.55}
+/* 列表页工具条 */
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}
+.toolbar input{flex:1;min-width:200px;background:var(--bg2);border:1px solid var(--line);color:var(--txt);border-radius:var(--radius);padding:10px 14px;font-size:15px}
+.pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.pill{background:var(--bg2);border:1px solid var(--line);color:var(--mut);border-radius:20px;padding:6px 14px;font-size:13px;cursor:pointer}
+.pill.on{background:var(--acc);border-color:var(--acc);color:#04121f;font-weight:700}
+.empty{color:var(--mut);text-align:center;padding:40px 0;display:none}
+/* 教程详情 */
+.crumb{font-size:13px;color:var(--mut);margin:18px 0 6px}
+.crumb a{color:var(--mut)}
+.t-title{font-size:26px;line-height:1.4;margin-bottom:10px}
+.t-meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.progressbar{height:8px;background:var(--bg3);border-radius:6px;overflow:hidden;margin:14px 0 4px}
+.progressbar i{display:block;height:100%;background:var(--acc2);width:0;transition:width .3s}
+.prog-txt{font-size:13px;color:var(--mut);margin-bottom:6px}
+.step{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin:16px 0}
+.step.done{opacity:.62}
+.step.done h3{color:var(--acc2)}
+.step-head{display:flex;gap:10px;align-items:flex-start;margin-bottom:8px}
+.step-check{flex:none;width:22px;height:22px;margin-top:3px;accent-color:var(--acc2);cursor:pointer}
+.step h3{font-size:17px;flex:1}
+.step p,.step li{font-size:15px;color:#c9d1d9}
+.step ul,.step ol{padding-left:22px;margin:8px 0}
+.step li{margin-bottom:6px}
+/* 代码块 */
+.codeblock{background:var(--code-bg);border:1px solid var(--line);border-radius:8px;margin:12px 0;overflow:hidden}
+.codeblock .chead{display:flex;align-items:center;background:var(--bg3);padding:7px 12px;font-size:12px;color:var(--mut)}
+.codeblock .chead span{margin-right:auto}
+.copybtn{background:var(--bg2);border:1px solid var(--line);color:var(--acc);font-size:12px;border-radius:6px;padding:4px 12px;cursor:pointer}
+.copybtn:hover{border-color:var(--acc)}
+.codeblock pre{padding:14px;overflow-x:auto;font-size:13.5px;line-height:1.65}
+.codeblock code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Courier New",monospace;color:#d6e2f0;white-space:pre}
+.cmd code{color:#7ee787}
+.out code{color:#8b949e}
+/* 提示框 */
+.note{border-left:3px solid var(--warn);background:rgba(210,153,34,.08);padding:10px 14px;border-radius:0 8px 8px 0;font-size:14px;margin:12px 0;color:#e8dcc3}
+.note b{color:var(--warn)}
+.tip{border-left:3px solid var(--acc2);background:rgba(63,185,80,.08);padding:10px 14px;border-radius:0 8px 8px 0;font-size:14px;margin:12px 0;color:#cfe8d4}
+.tip b{color:var(--acc2)}
+/* 报错/清单 */
+.err{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin:12px 0}
+.err h4{font-size:15px;color:var(--bad);margin-bottom:6px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.err p{font-size:14px;color:#c9d1d9;margin-bottom:4px}
+.err .fix{color:var(--acc2)}
+.check li{list-style:none;padding-left:28px;position:relative;margin-bottom:8px;font-size:15px}
+.check li::before{content:"☐";position:absolute;left:4px;color:var(--mut)}
+/* 底部 */
+footer{border-top:1px solid var(--line);margin-top:40px;padding:22px 0 34px;color:var(--mut);font-size:13px}
+footer .wrap{display:flex;gap:18px;flex-wrap:wrap;align-items:center}
+/* 404 */
+.nf{text-align:center;padding:70px 0}
+.nf h1{font-size:64px;color:var(--mut)}
+.nf p{color:var(--mut);margin:12px 0 22px}
