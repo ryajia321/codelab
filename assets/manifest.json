@@ -1,0 +1,12 @@
+{
+  "name": "CodeLab 码上实践",
+  "short_name": "CodeLab",
+  "description": "面向零基础中文用户的编程实战教程",
+  "start_url": "/codelab/",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "icons": [
+    { "src": "/codelab/assets/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

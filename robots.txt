@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://ryajia321.github.io/codelab/sitemap.xml

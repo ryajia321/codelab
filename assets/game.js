@@ -27,7 +27,23 @@ var GUESS = [
   { code: 'print(bool([]), bool("0"))', opts: ['True True', 'False False', 'False True', 'True False'], ans: 2,
     why: '空列表是 False；非空字符串（哪怕内容是"0"）都是 True。' },
   { code: 'n = 10\nn += 5\nprint(n)', opts: ['10', '5', '15', '105'], ans: 2,
-    why: 'n += 5 等价于 n = n + 5。' }
+    why: 'n += 5 等价于 n = n + 5。' },
+  { code: 'print("py" + "thon")', opts: ['python', 'py thon', 'py+thon', '报错'], ans: 0,
+    why: '字符串用 + 就是拼接。' },
+  { code: 'a = "  hi  "\nprint(a.strip())', opts: ['  hi  ', 'hi', '  hi', 'hi  '], ans: 1,
+    why: 'strip() 去掉两头的空白。' },
+  { code: 'print(list(range(2, 8, 2)))', opts: ['[2, 4, 6]', '[2, 3, 4, 5, 6, 7]', '[2, 4, 6, 8]', '[2, 8, 2]'], ans: 0,
+    why: 'range(2, 8, 2) 从 2 开始、不到 8、步长 2。' },
+  { code: 'x = [1, 2]\ny = x\ny.append(3)\nprint(x)', opts: ['[1, 2]', '[1, 2, 3]', '[3]', '报错'], ans: 1,
+    why: 'y = x 不是复制！两个名字指向同一个列表，改 y 就是改 x。' },
+  { code: 'print("a,b,c".split(","))', opts: ["['a', 'b', 'c']", "['a,b,c']", "['a', ',', 'b']", '报错'], ans: 0,
+    why: 'split(",") 按逗号切成列表。' },
+  { code: 'print(2 ** 3 ** 2)', opts: ['64', '512', '36', '18'], ans: 1,
+    why: '乘方是右结合：先算 3**2=9，再算 2**9=512。' },
+  { code: 't = (1, 2)\nprint(t[0])', opts: ['1', '2', '(1, 2)', '报错'], ans: 0,
+    why: '圆括号是元组，和列表一样可以用下标取。' },
+  { code: 'print("-".join(["2026", "10", "19"]))', opts: ['2026-10-19', '20261019', "['2026-10-19']", '报错'], ans: 0,
+    why: 'join 是 split 的反操作：用 - 把列表拼成字符串。' }
 ];
 
 var BUG = [
@@ -48,7 +64,19 @@ var BUG = [
     why: 'def 下面的代码块必须缩进，否则不算函数体。' },
   { code: 'age = input("年龄：")\nprint(age + 1)',
     opts: ['input 不能加提示文字', 'input 返回的是字符串，不能直接 + 1', '变量名不能叫 age', 'print 里不能做加法'], ans: 1,
-    why: 'input() 永远返回字符串，要先 int(age) 转成数字。' }
+    why: 'input() 永远返回字符串，要先 int(age) 转成数字。' },
+  { code: 'while True\n    print("loop")',
+    opts: ['True 要小写', 'while 行尾少了冒号 :', 'print 不能在循环里', 'loop 要加引号'], ans: 1,
+    why: 'while 和 for 一样，行尾也要冒号。' },
+  { code: 'print("结果：" + 42)',
+    opts: ['引号是中文的', '字符串和数字不能直接用 + 拼接', '42 要加引号才对', 'print 里不能有中文'], ans: 1,
+    why: '字符串 + 数字会 TypeError，要先 str(42) 转成字符串。' },
+  { code: 'l = [1, 2, 3]\nprint(l.len())',
+    opts: ['列表没有 .len() 方法，要用 len(l)', 'len 要大写', 'print 不能打印长度', '列表定义错了'], ans: 0,
+    why: 'len() 是全局函数，不是列表的方法。' },
+  { code: 'for i in range(3):\nprint(i)',
+    opts: ['range 不能用在 for 里', '循环体没有缩进', 'i 不能做循环变量', 'print 要写在 for 前面'], ans: 1,
+    why: 'for 下面的代码块必须缩进，不然 Python 不知道哪些算循环体。' }
 ];
 
 var MODES = { guess: { name: '猜输出', qs: GUESS }, bug: { name: '找Bug', qs: BUG } };

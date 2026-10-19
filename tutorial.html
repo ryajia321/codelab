@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>教程 - CodeLab 码上实践</title>
+<meta name="theme-color" content="#0d1117">
+<meta property="og:title" content="教程 - CodeLab 码上实践">
+<meta property="og:description" content="零基础中文编程实战教程：完整代码、一步一步的运行指令、预期输出和报错排查。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ryajia321.github.io/codelab/tutorial.html">
+<link rel="manifest" href="assets/manifest.json">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
@@ -75,6 +82,16 @@
   if(t.exercises && t.exercises.length){
     h += '<div class="sec"><h2>练习题</h2><div class="sub">自己动手试试</div><div class="step"><ol>' +
          t.exercises.map(function(g){ return '<li>' + sanitizeHTML(g) + '</li>'; }).join('') + '</ol></div></div>';
+  }
+  var TS = window.TUTORIALS || [];
+  var curIdx = TS.indexOf(t);
+  var prev = curIdx > 0 ? TS[curIdx - 1] : null;
+  var next = curIdx >= 0 && curIdx < TS.length - 1 ? TS[curIdx + 1] : null;
+  if(prev || next){
+    h += '<div class="prevnext">' +
+      (prev ? '<a class="pn prev" href="tutorial.html?id=' + prev.id + '"><span>← 上一篇</span><b>' + esc(prev.title) + '</b></a>' : '<span></span>') +
+      (next ? '<a class="pn next" href="tutorial.html?id=' + next.id + '"><span>下一篇 →</span><b>' + esc(next.title) + '</b></a>' : '<span></span>') +
+      '</div>';
   }
   el.innerHTML = h;
   var total = t.steps.length;

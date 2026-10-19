@@ -78,8 +78,8 @@ const sbG = { console, localStorage: { getItem: () => null, setItem: () => {}, r
 vm.createContext(sbG);
 vm.runInContext(fs.readFileSync(site + '/assets/game.js', 'utf8'), sbG);
 const Game = sbG.window.Game;
-eq('猜输出12题', Game.guessCount, 12);
-eq('找Bug6题', Game.bugCount, 6);
+eq('猜输出20题', Game.guessCount, 20);
+eq('找Bug10题', Game.bugCount, 10);
 eq('连击2次+10分', Game.pointsFor(2), 10);
 eq('连击3次+15分', Game.pointsFor(3), 15);
 eq('连击5次+15分', Game.pointsFor(5), 15);
@@ -94,6 +94,21 @@ for(const pg of ['index.html','tutorials.html','tutorial.html','errors.html']){
   eq(pg + '导航有小游戏', h.includes('game.html'), true);
 }
 eq('404导航有小游戏', fs.readFileSync(site + '/404.html', 'utf8').includes('/codelab/game.html'), true);
+// ---- 持续优化 ----
+{
+  const sm = fs.readFileSync(site + '/sitemap.xml', 'utf8');
+  eq('sitemap有6篇教程', (sm.match(/tutorial.html\?id=/g) || []).length, 6);
+  eq('robots.txt有sitemap', fs.readFileSync(site + '/robots.txt', 'utf8').includes('sitemap.xml'), true);
+  const mf = JSON.parse(fs.readFileSync(site + '/assets/manifest.json', 'utf8'));
+  eq('manifest有效', mf.name === 'CodeLab 码上实践' && mf.display === 'standalone', true);
+  const th = fs.readFileSync(site + '/tutorial.html', 'utf8');
+  eq('教程页有上一篇下一篇', th.includes('prevnext') && th.includes('上一篇'), true);
+  for(const pg of ['index.html','game.html']){
+    const h = fs.readFileSync(site + '/' + pg, 'utf8');
+    eq(pg + '有OG标签', h.includes('og:title'), true);
+    eq(pg + '有theme-color', h.includes('theme-color'), true);
+  }
+}
 eq('有游戏达人成就', sbA.window.Achv.list.some(a => a.id === 'game-master'), true);
 eq('有全对通关成就', sbA.window.Achv.list.some(a => a.id === 'game-perfect'), true);
 eq('grant函数存在', typeof sbA.window.Achv.grant === 'function', true);
